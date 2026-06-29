@@ -31,7 +31,7 @@ Tarea: [descripción exacta de lo que necesita el usuario con la API]
 ```
 
 El agente:
-1. Consulta la documentación de API en `/home/alexis/.claude/plugins/cache/fs-claude-plugin/fs-dev/1.1.0/agents/docs/`
+1. Consulta la documentación de API en `${CLAUDE_PLUGIN_ROOT}/agents/docs/`
 2. Analiza los endpoints existentes
 3. Diseña e implementa los endpoints necesarios
 4. Registra rutas en Init.php si son endpoints personalizados

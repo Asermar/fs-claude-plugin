@@ -35,7 +35,7 @@ Tarea: [descripción exacta de qué se quiere extender y cómo]
 ```
 
 El agente:
-1. Consulta la documentación de extensiones en `/home/alexis/.claude/plugins/cache/fs-claude-plugin/fs-dev/1.1.0/agents/docs/`
+1. Consulta la documentación de extensiones en `${CLAUDE_PLUGIN_ROOT}/agents/docs/`
 2. Analiza la clase/vista objetivo para identificar hooks disponibles
 3. Determina el tipo de extensión necesario (PHP, XMLView, Table, Twig, Mod)
 4. Implementa la extensión siguiendo las convenciones
