@@ -677,6 +677,12 @@ interface PluginManifest {
     outputBase: string;
     /** Ruta opcional al archivo JSON de overrides de descripciones por modelo. */
     descriptionsOverridesPath?: string;
+    /**
+     * Rutas opcionales de plugins que EXTIENDEN tablas de este plugin vía
+     * `Extension/Table/*.xml` (p. ej. OSBCae añade columnas a tablas de OpenServBus).
+     * Sus columnas se fusionan en las tablas correspondientes antes de generar.
+     */
+    extensionPaths?: string[];
     models: Array<{
         name: string;
         outputDir: string;
@@ -1163,6 +1169,40 @@ async function loadTablesFromDir(tablesDir: string): Promise<Map<string, TableDe
 }
 
 /**
+ * Fusiona columnas y FKs de `Extension/Table/*.xml` de un plugin que extiende
+ * tablas ajenas (p. ej. OSBCae sobre tablas de OpenServBus). Solo añade lo que
+ * no exista ya, y únicamente a tablas presentes en `tables`. Devuelve el número
+ * de columnas fusionadas.
+ */
+async function mergeExtensionTables(
+    tables: Map<string, TableDefinition>,
+    extensionPath: string,
+): Promise<number> {
+    const extDir = join(extensionPath, 'Extension', 'Table');
+    if (!existsSync(extDir)) return 0;
+    let merged = 0;
+    const files = await readdir(extDir);
+    for (const file of files) {
+        if (!file.endsWith('.xml')) continue;
+        const tableName = file.replace(/\.xml$/, '');
+        const target = tables.get(tableName);
+        if (!target) continue; // solo extendemos tablas ya conocidas
+        const ext = parseTableXml(await readFile(join(extDir, file), 'utf8'));
+        for (const col of ext.columns) {
+            if (target.columns.some((c) => c.name === col.name)) continue;
+            target.columns.push(col);
+            merged++;
+        }
+        for (const fk of ext.foreignKeys) {
+            if (!target.foreignKeys.some((f) => f.localColumn === fk.localColumn)) {
+                target.foreignKeys.push(fk);
+            }
+        }
+    }
+    return merged;
+}
+
+/**
  * Combina dos diccionarios de traducciones; el segundo gana en colisiones
  * (las traducciones del plugin sobrescriben las del core).
  */
@@ -1374,6 +1414,14 @@ async function runPluginMode(args: CliArgs): Promise<void> {
     const pluginTables = await loadTablesFromDir(join(pluginPath, 'Table'));
     const allTables = new Map<string, TableDefinition>([...coreTables, ...pluginTables]);
     console.log(`[generate-metadata] Tablas cargadas: ${coreTables.size} core + ${pluginTables.size} plugin = ${allTables.size}.`);
+
+    // Fusionar columnas de plugins que extienden tablas de este plugin.
+    if (Array.isArray(manifest.extensionPaths)) {
+        for (const extPath of manifest.extensionPaths) {
+            const n = await mergeExtensionTables(allTables, extPath);
+            console.log(`[generate-metadata] Extensiones de ${extPath}: +${n} columna(s) fusionada(s).`);
+        }
+    }
 
     // Combinar traducciones del core con las del plugin.
     const pluginTranslationPath = join(pluginPath, 'Translation', 'es_ES.json');
