@@ -41,7 +41,7 @@ Tarea: [descripción exacta de lo que necesita el usuario]
 ```
 
 El agente:
-1. Consulta la documentación en `./agents/docs/` (testeo-de-plugins, gestion-de-errores, la-clase-tools)
+1. Consulta la documentación en `/home/alexis/.claude/plugins/cache/fs-claude-plugin/fs-dev/1.1.0/agents/docs/` (testeo-de-plugins, gestion-de-errores, la-clase-tools)
 2. Analiza los tests existentes del plugin
 3. Implementa tests o ejecuta herramientas de calidad
 4. Reporta resultados con métricas claras

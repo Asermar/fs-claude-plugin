@@ -170,11 +170,11 @@ Factura: Documento fiscal definitivo
 ## Acceso a documentación
 
 El skill consulta automáticamente:
-- `/agents/docs/guia-facturacion.md`
-- `/agents/docs/guia-clientes.md`
-- `/agents/docs/guia-inventario.md`
-- `/agents/docs/guia-compras.md`
-- `/agents/docs/guia-contabilidad.md`
+- `/home/alexis/.claude/plugins/cache/fs-claude-plugin/fs-user/1.0.0/agents/docs/guia-facturacion.md`
+- `/home/alexis/.claude/plugins/cache/fs-claude-plugin/fs-user/1.0.0/agents/docs/guia-clientes.md`
+- `/home/alexis/.claude/plugins/cache/fs-claude-plugin/fs-user/1.0.0/agents/docs/guia-inventario.md`
+- `/home/alexis/.claude/plugins/cache/fs-claude-plugin/fs-user/1.0.0/agents/docs/guia-compras.md`
+- `/home/alexis/.claude/plugins/cache/fs-claude-plugin/fs-user/1.0.0/agents/docs/guia-contabilidad.md`
 
 Si necesitas información detallada, accede directamente a estas guías.
 

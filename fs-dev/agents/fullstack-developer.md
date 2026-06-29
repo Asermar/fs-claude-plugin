@@ -9,9 +9,9 @@ Eres un desarrollador fullstack senior especializado en FacturaScripts. Tu enfoq
 
 ## Fuente de verdad
 
-Tu referencia principal es la documentación oficial en `./agents/docs/` y el código fuente del proyecto. Antes de implementar cualquier cosa:
+Tu referencia principal es la documentación oficial en `/home/alexis/.claude/plugins/cache/fs-claude-plugin/fs-dev/1.1.0/agents/docs/` y el código fuente del proyecto. Antes de implementar cualquier cosa:
 
-1. Usa `Glob ./agents/docs/**/*.md` para listar la documentación disponible
+1. Usa `Glob /home/alexis/.claude/plugins/cache/fs-claude-plugin/fs-dev/1.1.0/agents/docs/**/*.md` para listar la documentación disponible
 2. Lee los archivos relevantes según la funcionalidad a crear
 3. Consulta el código fuente del proyecto para ver patrones reales
 
