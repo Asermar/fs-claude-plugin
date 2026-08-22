@@ -22,6 +22,12 @@
 #
 # **Los commits de merge están exentos**: integran upstream, no aportan cambio propio.
 #
+# **Y también nuestra propia contabilidad.** Un commit que sólo toca `.oko/` o sólo la línea
+# `version` de un `plugin.json` no necesita declararse: es esta contabilidad y la línea de versión
+# propia, que ya están declaradas en la entrada `oko-inventario` con `-` en la columna de commits.
+# Sin esta exención el inventario crecería una línea por cada mantenimiento de sí mismo, y la
+# comprobación de cobertura no dejaría de protestar nunca.
+#
 # Los SHA van abreviados a 12 caracteres: git los resuelve igual y una línea con dos SHA
 # completos deja de ser legible. En un repo de este tamaño la colisión es inverosímil.
 #
@@ -38,3 +44,7 @@
 # nombre	commits	pr	estado	plugins	asunto
 docs-ruta-plugin-root	2d2c06f70a83,5b4927f220b8	https://github.com/FacturaScripts/fs-claude-plugin/pull/3	vigente	fs-dev,fs-user	los agentes y skills resuelven su documentación con ${CLAUDE_PLUGIN_ROOT} y no con una ruta relativa al directorio de trabajo
 mcp-columnas-extension	d782bfb4a2bc	https://github.com/FacturaScripts/fs-claude-plugin/pull/4	vigente	fs-mcp	las columnas de Extension/Table de los plugins habilitados se fusionan vía extensionPaths
+mcp-fechas-api	268dadca0136	https://github.com/FacturaScripts/fs-claude-plugin/pull/5	vigente	fs-mcp	las fechas que devuelve la API se parsean en vez de pasarlas a new Date(), que las interpretaba mal
+mcp-filtros-columnas	1adb42f10578	https://github.com/FacturaScripts/fs-claude-plugin/pull/6	vigente	fs-mcp	filtros que apuntaban a columnas inexistentes, y una tool duplicada
+mcp-rango-fechas	8e52d52f3c7e	https://github.com/FacturaScripts/fs-claude-plugin/pull/7	vigente	fs-mcp	las tools get_* aceptan filtros de rango de fecha
+oko-inventario	-	-	permanente	fs-dev,fs-user,fs-mcp	este inventario y la línea de versión propia: son nuestros por definición y no tienen PR que abrir

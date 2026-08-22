@@ -1,0 +1,32 @@
+# De qué versión de upstream viene cada plugin, y qué versión declaramos nosotros.
+#
+# ## Por qué esto está aquí y no en el número
+#
+# El número de versión es TONTO a propósito: una línea propia que no codifica nada. Se estudiaron
+# cuatro formas de meter la base dentro —un cuarto dígito (1.2.2.1), un guion bajo (1.2_2.0), un
+# sufijo semver (1.2.2+oko.1) y concatenar mayor y menor (12.2.0)— y todas se descartaron:
+#
+#   1.2.2.1     semver inválido; depende de que su parser lo tolere, y no lo controlamos
+#   1.2_2.0     inválido Y corrompe un campo que SÍ se compara: parseInt("2_2") da 2, así que
+#               1.2_2.1 y 1.2_3.0 ordenarían como iguales y el fallo sería silencioso
+#   1.2.2+oko.1 legal, pero semver IGNORA los metadatos al comparar precedencia: nuestro salto se
+#               leería como «no hay actualización», que es el silencio que este montaje persigue
+#   12.2.0      legal y ordena bien, pero concatenar es ambiguo desde que el menor llegue a 10
+#               (1.12 y 11.2 dan los dos 112)
+#
+# El motivo de fondo: si la semántica la lleva nuestro evaluador, meterla en el número es meterla
+# en el único campo que no controlamos. Un número que no pretende decir nada no puede mentir.
+#
+# ## Por qué la línea propia arranca en 2.0.0
+#
+# Porque tiene que ser MAYOR que lo instalado (upstream va por 1.2.x) para que la actualización se
+# detecte. Es la única propiedad que el número necesita, y arrancando en 2.0.0 no depende de cómo
+# compare versiones Claude Code, que es algo que no hemos medido.
+#
+# Al fusionar upstream, la línea de `version` de cada plugin.json dará conflicto: se resuelve
+# dejando la nuestra, subiéndola, y actualizando aquí la columna de upstream.
+#
+# plugin	upstream	nuestra
+fs-dev	1.2.1	2.0.0
+fs-user	1.1.0	2.0.0
+fs-mcp	1.2.2	2.0.0
