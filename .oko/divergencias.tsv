@@ -1,0 +1,40 @@
+# Inventario de lo que este fork lleva y upstream no.
+#
+# ## Por qué existe
+#
+# Sin él hay DOS listas y nadie las cruza: la de los PR abiertos vive en GitHub y la de lo que
+# vigilamos vivía en el directorio de parches. Medido en ago-2026: cinco PR abiertos, un solo
+# parche registrado, y `claude-dist plugins check` informando «1 parche al día» — cierto y
+# engañoso. Cuatro arreglos llevaban meses sin llegar a la copia instalada y nada lo dijo.
+#
+# ## Qué se declara y qué NO
+#
+# Sólo lo que no se puede deducir. El estado del PR —abierto, fusionado, cerrado— es observable:
+# lo lee el evaluador de GitHub. Copiarlo aquí sería un espejo que se queda obsoleto, que es
+# exactamente la enfermedad que este fichero cura.
+#
+# ## La unidad es la DIVERGENCIA, no el commit
+#
+# Una divergencia puede ocupar varios commits: la de la ruta de la documentación son dos —el
+# primer intento con ruta absoluta y el refactor a ${CLAUDE_PLUGIN_ROOT}—. Por eso `commits` es
+# una lista, y la comprobación de cobertura es que la unión de lo declarado cubra todos los
+# commits de `upstream/main..main`.
+#
+# **Los commits de merge están exentos**: integran upstream, no aportan cambio propio.
+#
+# Los SHA van abreviados a 12 caracteres: git los resuelve igual y una línea con dos SHA
+# completos deja de ser legible. En un repo de este tamaño la colisión es inverosímil.
+#
+# ## Los tres estados, y ninguno describe a upstream
+#
+#   vigente     está en el fork y se queda; su PR sigue vivo
+#   permanente  upstream lo rechazó y aquí se queda para siempre: NO volver a preguntar
+#   retirado    ya lo quitamos, y la última columna dice por qué (lo aceptaron, o lo arreglaron
+#               por otro camino). Se conserva la línea para que nadie lo reponga sin saberlo
+#
+# «Superado» no es un estado: es un HALLAZGO del evaluador tras fusionar upstream —«esto parece
+# redundante»— que acaba en una decisión humana y se anota como `retirado`.
+#
+# nombre	commits	pr	estado	plugins	asunto
+docs-ruta-plugin-root	2d2c06f70a83,5b4927f220b8	https://github.com/FacturaScripts/fs-claude-plugin/pull/3	vigente	fs-dev,fs-user	los agentes y skills resuelven su documentación con ${CLAUDE_PLUGIN_ROOT} y no con una ruta relativa al directorio de trabajo
+mcp-columnas-extension	d782bfb4a2bc	https://github.com/FacturaScripts/fs-claude-plugin/pull/4	vigente	fs-mcp	las columnas de Extension/Table de los plugins habilitados se fusionan vía extensionPaths
