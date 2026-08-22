@@ -1,5 +1,6 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { fsClient } from '../../fs/client.js';
+import { dateRangeFilters } from '../../metadata/dateRange.js';
 
 interface PaginationParams {
   connection: string;
@@ -876,6 +877,7 @@ export async function handlePurchasingTool(
             const result = await fsClient.get(
               '/presupuestoproveedores',
               {
+                ...dateRangeFilters('get_presupuestoproveedores', input as Record<string, unknown>),
                 offset: params.offset,
                 limit: params.limit,
                 codproveedor: params.codproveedor,
@@ -910,6 +912,7 @@ export async function handlePurchasingTool(
             const result = await fsClient.get(
               '/pedidoproveedores',
               {
+                ...dateRangeFilters('get_pedidoproveedores', input as Record<string, unknown>),
                 offset: params.offset,
                 limit: params.limit,
                 codproveedor: params.codproveedor,
@@ -944,6 +947,7 @@ export async function handlePurchasingTool(
             const result = await fsClient.get(
               '/albaranproveedores',
               {
+                ...dateRangeFilters('get_albaranproveedores', input as Record<string, unknown>),
                 offset: params.offset,
                 limit: params.limit,
                 codproveedor: params.codproveedor,
@@ -977,6 +981,7 @@ export async function handlePurchasingTool(
             const result = await fsClient.get(
               '/facturaproveedores',
               {
+                ...dateRangeFilters('get_facturaproveedores', input as Record<string, unknown>),
                 offset: params.offset,
                 limit: params.limit,
                 codproveedor: params.codproveedor,
@@ -1012,6 +1017,7 @@ export async function handlePurchasingTool(
             const result = await fsClient.get(
               '/reciboproveedores',
               {
+                ...dateRangeFilters('get_reciboproveedores', input as Record<string, unknown>),
                 offset: params.offset,
                 limit: params.limit,
                 codproveedor: params.codproveedor,
@@ -1030,6 +1036,7 @@ export async function handlePurchasingTool(
             const result = await fsClient.get(
               '/pagoproveedores',
               {
+                ...dateRangeFilters('get_pagoproveedores', input as Record<string, unknown>),
                 offset: params.offset,
                 limit: params.limit,
                 idrecibo: params.idrecibo,
