@@ -41,10 +41,36 @@
 # «Superado» no es un estado: es un HALLAZGO del evaluador tras fusionar upstream —«esto parece
 # redundante»— que acaba en una decisión humana y se anota como `retirado`.
 #
-# nombre	commits	pr	estado	plugins	asunto
-docs-ruta-plugin-root	2d2c06f70a83,5b4927f220b8	https://github.com/FacturaScripts/fs-claude-plugin/pull/3	vigente	fs-dev,fs-user	los agentes y skills resuelven su documentación con ${CLAUDE_PLUGIN_ROOT} y no con una ruta relativa al directorio de trabajo
-mcp-columnas-extension	d782bfb4a2bc	https://github.com/FacturaScripts/fs-claude-plugin/pull/4	vigente	fs-mcp	las columnas de Extension/Table de los plugins habilitados se fusionan vía extensionPaths
-mcp-fechas-api	268dadca0136	https://github.com/FacturaScripts/fs-claude-plugin/pull/5	vigente	fs-mcp	las fechas que devuelve la API se parsean en vez de pasarlas a new Date(), que las interpretaba mal
-mcp-filtros-columnas	1adb42f10578	https://github.com/FacturaScripts/fs-claude-plugin/pull/6	vigente	fs-mcp	filtros que apuntaban a columnas inexistentes, y una tool duplicada
-mcp-rango-fechas	8e52d52f3c7e	https://github.com/FacturaScripts/fs-claude-plugin/pull/7	vigente	fs-mcp	las tools get_* aceptan filtros de rango de fecha
-oko-inventario	-	-	permanente	fs-dev,fs-user,fs-mcp	este inventario y la línea de versión propia: son nuestros por definición y no tienen PR que abrir
+## La columna `privado`: si esto llegó al duplicado privado, y DECLARADO
+#
+# `Asermar/fs-claude-plugin-private` está al mismo nivel que este fork (misma disciplina frente a
+# upstream) más su capa HTTP+OAuth, que nunca irá a upstream. El invariante es que **contiene** lo de
+# aquí. Pero es un duplicado DESVINCULADO —GitHub no deja privatizar un fork—, así que los SHA no
+# coinciden y git no sabe que descienden uno de otro: lo estable es `git patch-id`.
+#
+# Y hay un caso que el patch-id no cubre: si al integrarlo allí el parche se **adaptó**, su patch-id
+# ya no coincide y una comprobación ingenua lo daría por ausente. Por eso se DECLARA el SHA
+# correspondiente, igual que no se copia aquí el estado del PR porque ése sí es observable.
+#
+# Vocabulario de la columna, y los cuatro casos son distintos a propósito:
+#
+#   <sha>[,<sha>]  integrado allí con ese/esos commits. La comprobación exige que EXISTAN en la ref
+#                  auditada; si además el patch-id coincide lo dice «idéntico», y si no, «adaptado»
+#                  —que es justo para lo que existe la columna, no un hallazgo.
+#   pendiente      sabemos que aún NO está integrado. Es un hallazgo (el invariante está roto), pero
+#                  uno CONOCIDO: no es lo mismo que no saberlo.
+#   -              no aplica: nunca tuvo que llegar allí.
+#   (columna ausente)  NO CONSTA. Es un hallazgo, no un silencio: «no sabemos si llegó» es una
+#                  respuesta distinta de «no llegó», y las dos lo son de «llegó».
+#
+# La ref auditada NO es el `main` del privado: es **el pin que registra `fs-remote-mcp`**, o sea lo
+# que de verdad corre en el servidor (decisión de Alexis, 23-ago-2026). HTTP+OAuth vive en ramas de
+# característica, así que auditar `main` dejaría las permanentes siempre como ausentes.
+#
+# nombre	commits	pr	estado	plugins	privado	asunto
+docs-ruta-plugin-root	2d2c06f70a83,5b4927f220b8	https://github.com/FacturaScripts/fs-claude-plugin/pull/3	vigente	fs-dev,fs-user	2d2c06f70a83,5b4927f220b8	los agentes y skills resuelven su documentación con ${CLAUDE_PLUGIN_ROOT} y no con una ruta relativa al directorio de trabajo
+mcp-columnas-extension	d782bfb4a2bc	https://github.com/FacturaScripts/fs-claude-plugin/pull/4	vigente	fs-mcp	d782bfb4a2bc	las columnas de Extension/Table de los plugins habilitados se fusionan vía extensionPaths
+mcp-fechas-api	268dadca0136	https://github.com/FacturaScripts/fs-claude-plugin/pull/5	vigente	fs-mcp	pendiente	las fechas que devuelve la API se parsean en vez de pasarlas a new Date(), que las interpretaba mal
+mcp-filtros-columnas	1adb42f10578	https://github.com/FacturaScripts/fs-claude-plugin/pull/6	vigente	fs-mcp	pendiente	filtros que apuntaban a columnas inexistentes, y una tool duplicada
+mcp-rango-fechas	8e52d52f3c7e	https://github.com/FacturaScripts/fs-claude-plugin/pull/7	vigente	fs-mcp	pendiente	las tools get_* aceptan filtros de rango de fecha
+oko-inventario	-	-	permanente	fs-dev,fs-user,fs-mcp	-	este inventario y la línea de versión propia: son nuestros por definición y no tienen PR que abrir
