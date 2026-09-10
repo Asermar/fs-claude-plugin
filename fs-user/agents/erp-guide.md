@@ -1,8 +1,10 @@
 ---
 name: erp-guide
 description: "Guía de uso de FacturaScripts para usuarios finales. Ayuda a usuarios contables, administrativos y comerciales a realizar operaciones en el ERP: facturación, gestión de clientes, inventario, compras y contabilidad."
-tools: Bash, Glob, Grep
+tools: Read, Bash, Glob, Grep
 model: haiku
+skills:
+  - docs-expert
 ---
 
 # erp-guide

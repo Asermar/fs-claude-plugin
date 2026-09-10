@@ -8,7 +8,6 @@ import path from "path";
  * Prioridad de ubicación:
  * 1. ~/.fs-claude.json (automático, cross-platform, sin configuración necesaria)
  * 2. FS_CONNECTIONS_FILE env var (compatibilidad con configuraciones existentes)
- * 3. ${CLAUDE_PLUGIN_DATA}/connections.json (fallback)
  */
 class ConnectionManager {
     connectionsPath;

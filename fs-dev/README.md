@@ -1,6 +1,6 @@
 # fs-dev — Plugin para desarrolladores de FacturaScripts
 
-Plugin para [Claude Code](https://claude.ai/code) orientado a desarrolladores que crean o mantienen plugins de FacturaScripts. Proporciona skills especializadas, agentes de IA y automatizaciones para todas las tareas del ciclo de desarrollo.
+Plugin para Claude Code y Codex orientado a desarrolladores que crean o mantienen plugins de FacturaScripts. Proporciona skills especializadas, perfiles de IA, documentación técnica y automatizaciones para todas las tareas del ciclo de desarrollo.
 
 ## Índice
 
@@ -76,7 +76,7 @@ Invoca cualquier skill escribiendo su nombre en el chat. Ejemplos: `/fs-dev:crea
 
 ## Agentes especializados
 
-Los agentes son instancias de Claude con contexto específico de FacturaScripts. Se activan automáticamente desde las skills o puedes invocarlos directamente desde el chat.
+En Claude Code, estos archivos se cargan como agentes nativos. En Codex, las skills leen los mismos archivos como perfiles de especialidad y los aplican directamente o los entregan a un subagente genérico cuando procede.
 
 | Agente | Modelo | Rol |
 |---|---|---|
@@ -84,22 +84,24 @@ Los agentes son instancias de Claude con contexto específico de FacturaScripts.
 | `fs-dev:backend-developer` | Opus | Desarrollo backend: modelos, BD, Workers, Cron |
 | `fs-dev:docs-expert` | Haiku | Documentación oficial y preguntas de programación |
 | `fs-dev:document-expert` | Opus | Documentos de compra y venta (presupuestos, facturas, albaranes, pedidos) |
-| `fs-dev:extension-developer` | Opus | Creación de extensiones para el Core o plugins externos |
-| `fs-dev:frontend-developer` | Opus | Capa frontend, plantillas Twig, JavaScript y CSS |
+| `fs-dev:extension-developer` | Sonnet | Creación de extensiones para el Core o plugins externos |
+| `fs-dev:frontend-developer` | Sonnet | Capa frontend, plantillas Twig, JavaScript y CSS |
 | `fs-dev:fullstack-developer` | Opus | Funcionalidades completas end-to-end |
-| `fs-dev:php-expert` | Opus | PHP idiomático y patrones de calidad para FacturaScripts |
+| `fs-dev:php-expert` | Sonnet | PHP idiomático y patrones de calidad para FacturaScripts |
 | `fs-dev:sql-expert` | Opus | Base de datos, optimización SQL y migraciones |
 | `fs-dev:testing-expert` | Sonnet | Tests, PHPUnit, PHPStan y control de calidad |
-| `fs-dev:ui-designer` | Opus | Diseño de interfaces XMLView |
+| `fs-dev:ui-designer` | Sonnet | Diseño de interfaces XMLView |
 
 ---
 
 ## Detección automática de contexto
 
-El plugin detecta automáticamente si el directorio de trabajo es un proyecto de FacturaScripts y activa el contexto de desarrollo correspondiente. Esto ocurre en dos momentos:
+El plugin detecta automáticamente si el directorio de trabajo es un proyecto de FacturaScripts y activa el contexto de desarrollo correspondiente:
 
 - **Al iniciar la sesión** — se analiza el directorio de trabajo actual.
-- **Al cambiar de directorio** — si navegas a una carpeta de FacturaScripts, el contexto se actualiza.
+- **Al cambiar de directorio en Claude Code** — el evento `CwdChanged` actualiza el contexto.
+
+Codex no ofrece `CwdChanged`; si cambias el directorio de trabajo, abre un hilo nuevo para volver a ejecutar `SessionStart`.
 
 Cuando se detecta un proyecto, las skills y agentes tienen acceso al contexto completo del framework para dar respuestas más precisas.
 
@@ -107,7 +109,7 @@ Cuando se detecta un proyecto, las skills y agentes tienen acceso al contexto co
 
 ## Scripts automáticos
 
-El plugin ejecuta dos scripts automáticamente tras cada escritura o edición de archivos PHP:
+El plugin ejecuta un hook secuencial tras cada escritura o edición. Acepta `Write`/`Edit` de Claude Code y `apply_patch` de Codex, incluso cuando un parche modifica varios archivos.
 
 ### Actualización de copyright
 
@@ -124,16 +126,15 @@ El script detecta el año actual y actualiza el rango si es necesario, sin modif
 
 Ordena automáticamente los miembros de las clases PHP según el estándar de FacturaScripts:
 
-1. Constantes públicas
-2. Constantes protegidas
-3. Constantes privadas
-4. Propiedades públicas (estáticas primero)
-5. Propiedades protegidas
-6. Propiedades privadas
-7. Constructor
-8. Métodos públicos (estáticos primero, luego alfabético)
-9. Métodos protegidos
-10. Métodos privados
+1. Traits usados por la clase
+2. Constantes
+3. Propiedades públicas
+4. Propiedades protegidas y privadas
+5. Métodos abstractos
+6. Métodos públicos
+7. Métodos protegidos y privados
+
+Cada grupo se ordena alfabéticamente. La transformación solo actúa sobre clases con namespace `FacturaScripts\\`.
 
 Esto garantiza que el código siempre siga el mismo orden, facilitando la revisión y la consistencia entre plugins.
 
@@ -173,4 +174,4 @@ Puedes desactivar cualquiera de los dos scripts automáticos creando o editando 
 }
 ```
 
-Si el archivo no existe, ambos scripts se ejecutan con su comportamiento por defecto (activados). Los cambios surten efecto en la siguiente edición de archivo, sin necesidad de reiniciar Claude.
+Si el archivo no existe, ambas transformaciones se ejecutan con su comportamiento por defecto (activadas). Los cambios de estas opciones surten efecto en la siguiente edición. Si cambia la definición del hook, Claude Code debe recargar el plugin y Codex debe revisar de nuevo el hook desde `/hooks` y abrir un hilo nuevo.

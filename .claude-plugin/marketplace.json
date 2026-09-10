@@ -1,5 +1,6 @@
 {
   "name": "fs-claude-plugin",
+  "description": "Plugins de FacturaScripts compatibles con Claude Code y Codex: desarrollo, asistencia de usuario y acceso MCP al ERP.",
   "owner": {
     "name": "FacturaScripts",
     "url": "https://facturascripts.com"
@@ -8,7 +9,7 @@
     {
       "name": "fs-dev",
       "source": "./fs-dev",
-      "description": "Plugin para programadores: skills, agentes y documentación técnica de FacturaScripts."
+      "description": "Plugin para programadores: skills portables, agentes de Claude y documentación técnica de FacturaScripts."
     },
     {
       "name": "fs-user",
@@ -18,7 +19,7 @@
     {
       "name": "fs-mcp",
       "source": "./fs-mcp",
-      "description": "Servidor MCP de FacturaScripts: conecta Claude a una o varias instalaciones del ERP para obtener datos en tiempo real."
+      "description": "Servidor MCP de FacturaScripts: conecta Claude Code o Codex a una o varias instalaciones del ERP para obtener datos en tiempo real."
     }
   ]
 }

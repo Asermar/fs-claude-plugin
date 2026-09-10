@@ -1,10 +1,6 @@
 ---
 name: skill-commit
-description: >
-  Buenas prácticas para crear commits de git claros, atómicos y bien estructurados en español.
-  Activa esta skill siempre que el usuario pida hacer un commit, confirmar cambios, guardar cambios
-  en git, o cualquier variación de "haz commit", "commitea", "sube los cambios", "guarda en git",
-  "git commit", etc. También cuando el usuario pida revisar o mejorar un mensaje de commit existente.
+description: Crea o revisa commits Git claros, atómicos y en español cuando el usuario pida confirmar, guardar o preparar cambios en Git.
 ---
 
 # Commits en Git — Buenas Prácticas
@@ -128,6 +124,6 @@ Cuando el usuario pida hacer un commit, sigue este orden:
 4. Analiza los cambios y redacta un mensaje de commit que siga las convenciones anteriores
 5. Haz staging solo de los archivos relevantes (evita `git add .` a ciegas)
 6. Crea el commit con el mensaje bien formateado
-7. Añade siempre al final: `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`
+7. No añadas firmas, marcas del asistente ni líneas `Co-Authored-By` salvo que el usuario las solicite expresamente.
 
 Si los cambios incluyen múltiples temas distintos, propón dividirlos en varios commits separados.

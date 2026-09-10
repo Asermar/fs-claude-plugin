@@ -8,6 +8,7 @@
     "build": "tsc -b",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
+    "test": "node --test tests/*.test.mjs",
     "generate:metadata": "npm run build && node dist/scripts/generate-metadata.js"
   },
   "dependencies": {

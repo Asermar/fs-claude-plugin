@@ -1,13 +1,6 @@
 ---
 name: skill-notice
-description: >
-  Redacta en pantalla (sin crear ningún archivo) un texto en formato markdown, listo para copiar
-  y pegar, que explica las novedades, mejoras y correcciones de un plugin o proyecto de
-  FacturaScripts a partir de un rango de commits o de versiones. Activa esta skill siempre que el
-  usuario pida "redacta las novedades", "escribe la noticia de los cambios", "genera el changelog",
-  "qué ha cambiado desde la versión X", "resume los cambios entre la versión X y la Y", "prepara el
-  anuncio de la nueva versión", o cualquier variación en la que se pida comunicar qué se ha hecho en
-  un rango de commits o entre dos versiones.
+description: Redacta en el chat un changelog o noticia en Markdown sobre cambios de un proyecto FacturaScripts a partir de un rango de commits o versiones.
 ---
 
 # Noticia de cambios (changelog) — Buenas prácticas

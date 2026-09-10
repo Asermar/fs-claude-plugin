@@ -169,14 +169,7 @@ Factura: Documento fiscal definitivo
 
 ## Acceso a documentación
 
-El skill consulta automáticamente:
-- `/agents/docs/guia-facturacion.md`
-- `/agents/docs/guia-clientes.md`
-- `/agents/docs/guia-inventario.md`
-- `/agents/docs/guia-compras.md`
-- `/agents/docs/guia-contabilidad.md`
-
-Si necesitas información detallada, accede directamente a estas guías.
+Para procedimientos concretos usa `fs-user:docs-expert`, que busca en la documentación incluida en `../../references/docs/` y, si el core no cubre la necesidad, en `../../references/projects/`.
 
 ## Para principiantes
 

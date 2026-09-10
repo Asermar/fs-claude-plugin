@@ -1,6 +1,6 @@
 # fs-mcp — Servidor MCP de FacturaScripts
 
-Plugin para [Claude Code](https://claude.ai/code) que proporciona un servidor [MCP (Model Context Protocol)](https://modelcontextprotocol.io) para conectar Claude directamente con la API REST de FacturaScripts. Permite consultar y modificar datos en tiempo real: facturas, clientes, productos, contabilidad, stock, etc.
+Plugin para Claude Code y Codex que proporciona un servidor [MCP (Model Context Protocol)](https://modelcontextprotocol.io) conectado a la API REST de FacturaScripts. Permite consultar y modificar datos en tiempo real: facturas, clientes, productos, contabilidad, stock, etc.
 
 ## Requisitos
 
@@ -9,6 +9,8 @@ Plugin para [Claude Code](https://claude.ai/code) que proporciona un servidor [M
   - macOS: `brew install node` o desde [nodejs.org](https://nodejs.org)
   - Windows: instalador desde [nodejs.org](https://nodejs.org)
 - FacturaScripts con la **API REST habilitada** y un token de acceso generado en *Administración → API → Tokens*.
+
+El manifiesto utiliza un lanzador portable: toma `CLAUDE_PLUGIN_ROOT` en Claude Code y el directorio de trabajo del plugin en Codex, por lo que no necesita rutas absolutas específicas de cada instalación.
 
 ---
 
@@ -217,7 +219,7 @@ El MCP permite crear, actualizar y eliminar registros en las entidades principal
 
 ## MCP Resources
 
-Además de herramientas, el servidor expone los modelos como **MCP Resources** bajo el esquema `fs-schema://`. Los clientes MCP que soporten resources (Claude Code, Claude Desktop) los muestran en su navegador de recursos sin que aparezcan en el listado de herramientas.
+Además de herramientas, el servidor expone los modelos como **MCP Resources** bajo el esquema `fs-schema://`. Los clientes MCP que soporten resources, incluidos Claude Code y Codex, pueden consultarlos sin que aparezcan en el listado de herramientas.
 
 | URI | Descripción |
 |---|---|
