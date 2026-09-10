@@ -22,7 +22,7 @@ Este repositorio distribuye los plugins `fs-dev`, `fs-user` y `fs-mcp` de Factur
 - Mantén un único marketplace y un único código fuente para ambos hosts. No crees un plugin paralelo para Codex salvo que una limitación técnica demostrada haga imposible compartir la implementación y el usuario acepte la separación.
 - Conserva los identificadores `fs-dev`, `fs-user`, `fs-mcp` y el marketplace `fs-claude-plugin`.
 - Conserva `~/.fs-claude.json` como configuración compartida por retrocompatibilidad.
-- La matriz actual de compatibilidad está en [`COMPATIBILITY.md`](../COMPATIBILITY.md). Actualízala únicamente cuando cambien capacidades, limitaciones o el flujo de recarga.
+- La matriz actual de compatibilidad está en [`COMPATIBILITY.md`](COMPATIBILITY.md). Actualízala únicamente cuando cambien capacidades, limitaciones o el flujo de recarga.
 
 ## Skills y perfiles especializados
 
