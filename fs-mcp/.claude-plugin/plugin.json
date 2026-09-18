@@ -1,7 +1,7 @@
 {
   "name": "fs-mcp",
   "version": "2.0.0",
-  "description": "Servidor MCP de FacturaScripts con soporte para múltiples instalaciones.",
+  "description": "Servidor MCP de FacturaScripts para Claude Code y Codex, con múltiples instalaciones y módulos locales privados.",
   "author": {
     "name": "Daniel Fernández Giménez",
     "email": "contacto@danielfg.es",
@@ -13,7 +13,11 @@
   "mcpServers": {
     "facturascripts": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/server/dist/index.js"],
+      "args": [
+        "-e",
+        "const path = require('node:path'); const { pathToFileURL } = require('node:url'); const root = process.env.CLAUDE_PLUGIN_ROOT || process.cwd(); import(pathToFileURL(path.join(root, 'server/dist/index.js')).href);"
+      ],
+      "cwd": ".",
       "env": {
         "FS_CONNECTIONS_FILE": "${FS_CONNECTIONS_FILE}",
         "FS_DEFAULT_CONNECTION": "${FS_DEFAULT_CONNECTION}"

@@ -69,7 +69,7 @@ Si necesitas cambiar cuál es la conexión por defecto, puedes:
 
 ## Flujo de Ejecución
 
-1. El skill consultará el archivo de configuración (`connections.json`)
+1. La skill consultará el archivo unificado `~/.fs-claude.json`
 2. Si el MCP está disponible, usará la herramienta `list_connections`
 3. Si no está disponible, leerá el archivo directamente
 4. Mostrará los resultados en formato tabla
@@ -82,6 +82,6 @@ Según lo que veas:
 - **Si hay conexiones**: Puedes empezar a usar el MCP con todos sus endpoints
 - **Si no hay conexiones**: Usa `fs-mcp:add-connection` para crear una
 - **Si quieres cambiar la predeterminada**: Anota la clave y contacta al administrador del MCP
-- **Si tienes problemas**: Verifica que el archivo `connections.json` existe en `${CLAUDE_PLUGIN_DATA}/`
+- **Si tienes problemas**: verifica que existe `~/.fs-claude.json`, que su JSON es válido y que contiene la sección `connections`
 
 ¿Quieres ejecutar este skill? Te mostraré todas tus conexiones configuradas.

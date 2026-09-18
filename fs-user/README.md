@@ -1,6 +1,6 @@
 # fs-user — Plugin para usuarios de FacturaScripts
 
-Plugin para [Claude Code](https://claude.ai/code) orientado a usuarios contables, administrativos y comerciales que trabajan con FacturaScripts en su día a día. No requiere conocimientos técnicos.
+Plugin para Claude Code y Codex orientado a usuarios contables, administrativos y comerciales que trabajan con FacturaScripts en su día a día. No requiere conocimientos técnicos.
 
 Permite analizar datos del ERP, generar informes ejecutivos y resolver dudas sobre el uso del sistema.
 
@@ -38,7 +38,7 @@ Invoca cualquier skill escribiendo su nombre en el chat. Ejemplos: `/fs-user:ana
 
 ## Agentes especializados
 
-Los agentes se activan automáticamente desde las skills o puedes invocarlos directamente en el chat.
+Claude Code puede cargar estos perfiles como agentes nativos. En Codex, las skills aplican directamente el conocimiento y las referencias compartidas; no necesitan agentes Markdown propios.
 
 | Agente | Modelo | Rol |
 |---|---|---|
@@ -50,4 +50,4 @@ Los agentes se activan automáticamente desde las skills o puedes invocarlos dir
 
 ## Detección automática de contexto
 
-El plugin detecta automáticamente si el directorio de trabajo está relacionado con FacturaScripts y ajusta el contexto de los agentes. Esto ocurre al iniciar la sesión y al cambiar de directorio.
+El plugin detecta automáticamente si el directorio de trabajo está relacionado con FacturaScripts. Se ejecuta al iniciar sesión en ambos hosts y también al cambiar de directorio en Claude Code. Como Codex no ofrece `CwdChanged`, después de cambiar el directorio conviene abrir un hilo nuevo.

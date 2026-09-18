@@ -1,6 +1,6 @@
 ---
 name: sync-models
-description: Sincroniza modelos del MCP fs-mcp con sus fuentes (FacturaScripts core o plugins privados). Detecta columnas nuevas/modificadas/eliminadas, mantiene las descripciones unificadas en los archivos de overrides, regenera la metadata y compila si hace falta. Soporta uno o varios modelos, ruta local o URL de GitHub, y un modo "refresh masivo" para auditar todos los modelos del catálogo y actualizar la versión registrada de FacturaScripts.
+description: Sincroniza uno o varios modelos de fs-mcp con el core o plugins privados, actualiza metadata y descripciones, detecta cambios de columnas y compila cuando corresponde.
 ---
 
 # Sync Models — Mantenimiento de la metadata del MCP

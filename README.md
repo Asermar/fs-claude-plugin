@@ -1,81 +1,63 @@
-# FacturaScripts Claude Plugin
+# Plugins de FacturaScripts para Claude Code y Codex
 
-Plugin para [Claude Code](https://claude.ai/code) que integra el ERP [FacturaScripts](https://facturascripts.com) con inteligencia artificial. Incluye tres subplugins independientes orientados a diferentes perfiles de uso.
-
-## Instalación desde el Marketplace
-
-Puedes instalar el plugin desde **Claude Desktop** (interfaz gráfica) o desde **Claude Code CLI** (terminal).
-
----
-
-### Opción A — Claude Desktop (interfaz gráfica)
-
-1. Abre Claude Desktop y ve a la pestaña **Cowork** o **Code**.
-2. Haz clic en el icono de **Personalización** (ajustes/engranaje).
-3. Pulsa el símbolo **+** (añadir plugin).
-4. Selecciona **Nuevo plugin**.
-5. Elige **Añadir marketplace** e introduce la URL del repositorio:
-
-```
-https://github.com/FacturaScripts/fs-claude-plugin
-```
-
-6. Confirma la instalación. Claude Desktop descargará el marketplace automáticamente.
-7. Una vez instalado podrá ver los plugins disponibles para habilitarlos y poder usarlos.
-
----
-
-### Opción B — Claude Code CLI (terminal)
-
-En Claude Code ejecuta:
-
-```
-/plugin add marketplace FacturaScripts/fs-claude-plugin
-```
-
-O clona el repositorio e instálalo desde la ruta local:
-
-```bash
-git clone https://github.com/FacturaScripts/fs-claude-plugin
-```
-
-```
-/plugin install /ruta/local/al/repositorio
-```
-
-> El plugin incluye los archivos `dist/` precompilados del servidor MCP. Aun así, **Node.js debe estar instalado** en tu máquina para que el servidor MCP pueda ejecutarse.
-
----
-
-### 2. Activar los plugins
-
-Una vez instalado el marketplace, activa los subplugins que necesites desde la gestión de plugins de Claude Code:
+Este repositorio distribuye tres plugins independientes para trabajar con [FacturaScripts](https://facturascripts.com) desde Claude Code o Codex.
 
 | Plugin | Para quién | Descripción |
 |---|---|---|
-| **fs-dev** | Desarrolladores | Skills y agentes para crear y mantener plugins de FacturaScripts |
-| **fs-user** | Usuarios del ERP | Skills para analizar datos, generar informes y resolver dudas |
-| **fs-mcp** | Cualquier usuario | Servidor MCP que conecta Claude directamente con tu FacturaScripts |
+| **fs-dev** | Desarrolladores | Skills portables, perfiles especializados, documentación técnica y automatizaciones |
+| **fs-user** | Usuarios del ERP | Análisis de datos, informes y ayuda documentada sobre el uso del ERP |
+| **fs-mcp** | Cualquier usuario | Servidor MCP con conexiones múltiples y módulos privados locales |
 
-Puedes activar uno, dos o los tres según tu perfil. No es necesario activarlos todos.
+## Instalación en Claude Code
 
----
+Añade el marketplace desde Claude Desktop/Cowork o desde Claude Code:
+
+```text
+/plugin add marketplace FacturaScripts/fs-claude-plugin
+```
+
+También puedes clonar el repositorio e instalarlo desde una ruta local:
+
+```text
+/plugin install /ruta/local/fs-claude-plugin
+```
+
+Activa después `fs-dev`, `fs-user` y/o `fs-mcp` desde el gestor de plugins. Tras actualizar una instalación local, usa `/reload-plugins` o abre una sesión nueva.
+
+## Instalación local en Codex
+
+Clona el repositorio y registra su marketplace local:
+
+```bash
+git clone https://github.com/FacturaScripts/fs-claude-plugin
+codex plugin marketplace add /ruta/local/fs-claude-plugin
+codex plugin add fs-dev@fs-claude-plugin
+codex plugin add fs-user@fs-claude-plugin
+codex plugin add fs-mcp@fs-claude-plugin
+```
+
+Después de instalar o actualizar, abre un hilo nuevo para que Codex cargue las skills y los servidores MCP actuales. Los hooks se revisan y autorizan desde `/hooks`; cuando cambia su definición, Codex solicita una nueva revisión.
+
+Codex utiliza directamente las skills. Los archivos Markdown de `agents/` son agentes nativos de Claude Code; las skills de `fs-dev` cargan esos mismos archivos como perfiles de especialidad para mantener un único contenido compartido en ambos hosts.
+
+La matriz de capacidades, diferencias de hooks y flujo de recarga está documentada en [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Plugins incluidos
 
-- [fs-dev — Plugin para desarrolladores](fs-dev/README.md)
-- [fs-user — Plugin para usuarios del ERP](fs-user/README.md)
-- [fs-mcp — Servidor MCP de FacturaScripts](fs-mcp/README.md)
+- [fs-dev — Desarrollo](fs-dev/README.md)
+- [fs-user — Uso del ERP](fs-user/README.md)
+- [fs-mcp — Servidor MCP](fs-mcp/README.md)
 
----
+## Configuración compartida
+
+Los tres plugins usan `~/.fs-claude.json`. El nombre se conserva por compatibilidad e incluye conexiones, opciones de automatización y `settings.localModulesPath`. Los módulos privados permanecen fuera de este repositorio y se cargan dinámicamente desde esa ruta.
 
 ## Requisitos
 
-- [Claude Code](https://claude.ai/code) con soporte de plugins
-- FacturaScripts con API REST habilitada (solo para el plugin `fs-mcp`)
-- **Node.js ≥ 18** instalado en tu máquina (Linux, macOS o Windows) — necesario para ejecutar el servidor MCP
-
----
+- Claude Code o Codex con soporte de plugins
+- FacturaScripts con la API REST habilitada para `fs-mcp`
+- Node.js 18 o superior para ejecutar el servidor MCP
+- Python 3 para las automatizaciones de `fs-dev`
 
 ## Licencia
 

@@ -1,7 +1,6 @@
 ---
 name: reporting-analyst
 description: "Analista de reportes y datos de FacturaScripts para usuarios contables, administrativos y comerciales. Analiza datos del ERP, genera informes ejecutivos, realiza análisis de ventas, gestión de cobros, inventario y tesorería."
-tools: Bash, Glob, Grep
 model: sonnet
 ---
 
