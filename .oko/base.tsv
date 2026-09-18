@@ -19,7 +19,8 @@
 #
 # ## Por qué la línea propia arranca en 2.0.0
 #
-# Porque tiene que ser MAYOR que lo instalado (upstream va por 1.2.x) para que la actualización se
+# Porque tiene que ser MAYOR que lo instalado (cuando se escribió, upstream iba por 1.2.x; la base
+# real de cada plugin es la de la tabla de abajo) para que la actualización se
 # detecte. Es la única propiedad que el número necesita, y arrancando en 2.0.0 no depende de cómo
 # compare versiones Claude Code, que es algo que no hemos medido.
 #
@@ -27,6 +28,6 @@
 # dejando la nuestra, subiéndola, y actualizando aquí la columna de upstream.
 #
 # plugin	upstream	nuestra
-fs-dev	1.2.1	2.0.0
-fs-user	1.1.0	2.0.0
-fs-mcp	1.2.2	2.0.0
+fs-dev	1.4.0	2.0.0
+fs-user	1.3.0	2.0.0
+fs-mcp	1.2.5	2.0.0
