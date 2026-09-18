@@ -28,6 +28,6 @@
 # dejando la nuestra, subiéndola, y actualizando aquí la columna de upstream.
 #
 # plugin	upstream	nuestra
-fs-dev	1.4.0	2.0.0
-fs-user	1.3.0	2.0.0
-fs-mcp	1.2.5	2.0.0
+fs-dev	1.4.0	2.1.0
+fs-user	1.3.0	2.1.0
+fs-mcp	1.2.5	2.1.0
