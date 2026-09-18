@@ -154,3 +154,33 @@ herramienta informando «1 parche al día» — cierto y engañoso.
 El del marketplace **no** sirve: lo gestiona Claude Code —lo actualiza y puede rehacerlo— y además
 le falta el remoto `upstream`, sin el cual «¿se movió upstream?» siempre responde que no. Se trabaja
 en un clon propio; `claude-dist plugins fork --clon <ruta>` acepta cuál.
+
+## Frontera
+
+**Destino:** que la documentación empaquetada del plugin sea alcanzable en los dos hosts **desde el
+código de upstream**, sin que este fork tenga que volver a llevar un parche de rutas.
+
+**El hallazgo que la abre** (medido el 18-sep-2026, al integrar `1a25075`): las skills que upstream
+reescribió declaran que `../../references/docs/` «se resuelve respecto a este `SKILL.md`», y la
+documentación de Claude Code dice lo contrario — *«Claude Code runs each command in the session
+shell's current working directory (…) Use `${CLAUDE_SKILL_DIR}` or `${CLAUDE_PROJECT_DIR}` in paths
+that must resolve the same way every time»*, y su tabla de sustituciones lista `${CLAUDE_PLUGIN_ROOT}`
+como disponible dentro del cuerpo de un `SKILL.md`
+([skills.md](https://code.claude.com/docs/en/skills.md)). En una sesión abierta en el proyecto del
+usuario esa ruta apunta **dos niveles por encima de su proyecto**: es el mismo defecto que
+`docs-ruta-plugin-root` arreglaba, reaparecido en la capa que reescribieron.
+
+### Pendiente de decidir
+
+- ¿Sustituye **Codex** `${CLAUDE_PLUGIN_ROOT}` en el cuerpo de un `SKILL.md`? — decide si hay arreglo
+  posible o hay que buscar otra vía. **NO VERIFICADO**: no hay Codex en esta casa. Upstream afirma
+  que «ambos hosts lo proporcionan por compatibilidad», pero lo dice de los **hooks**. Lo pregunta
+  Alexis al mantenedor.
+- ¿Entra en `.oko/divergencias.tsv`, y con qué estado, cuando exista el PR a upstream? — hoy no
+  procede: sus tres estados describen divergencias que **llevamos**, y de esto no llevamos nada.
+
+### Fuera de alcance
+
+- **Parchear las skills aquí** para que usen `${CLAUDE_PLUGIN_ROOT}` — revertiría en silencio una
+  decisión que upstream tomó a propósito por Codex («Resuelve los recursos relativos respecto al
+  directorio de la skill», su `CLAUDE.md`). Si hay arreglo, sale por PR a upstream, no por divergencia.
