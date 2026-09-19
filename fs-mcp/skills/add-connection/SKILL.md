@@ -102,10 +102,11 @@ Tras guardar la conexión, muestra al usuario la ruta del archivo y el contenido
 
 ### 5. Reinicio del servidor MCP
 
-Para que Claude cargue las conexiones del archivo recién actualizado, es necesario **reiniciar Claude**:
+Para que el servidor MCP cargue las conexiones del archivo recién actualizado, inicia una sesión nueva o reinicia el host:
 - **Claude Code CLI**: cierra la sesión actual y ejecuta `claude` de nuevo
 - **Claude Desktop**: cierra la aplicación y vuelve a abrirla
 - **Claude Cowork**: cierra y reabre la app
+- **Codex**: abre un hilo nuevo; si el servidor sigue activo con la configuración anterior, reinicia Codex
 
 > El servidor MCP lee `~/.fs-claude.json` al arrancar. No requiere configurar `FS_CONNECTIONS_FILE` manualmente; el archivo se encuentra automáticamente en cualquier plataforma.
 

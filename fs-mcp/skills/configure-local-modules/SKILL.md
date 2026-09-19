@@ -74,9 +74,10 @@ Para usar una ruta existente, reemplaza `modules_dir` con la ruta que proporcion
 
 ### 3. Reiniciar el servidor MCP
 
-Después de configurar la ruta, reinicia Claude para que el servidor MCP la cargue:
+Después de configurar la ruta, inicia una sesión nueva o reinicia el host para que el servidor MCP la cargue:
 - **Claude Code CLI**: cierra la sesión y ejecuta `claude` de nuevo
 - **Claude Desktop**: cierra y vuelve a abrir la app
+- **Codex**: abre un hilo nuevo; si el servidor sigue activo, reinicia Codex
 
 Al arrancar verás en los logs:
 ```
@@ -211,6 +212,6 @@ Para ordenar usa `sort[campo]`: `{ 'sort[creationdate]': 'DESC' }`.
 2. **Configuración**: Si no hay ruta, pregunto si usar una existente o crear `~/fs-claude-mcp-private/`
 3. **Escritura**: Actualizo `~/.fs-claude.json` con la ruta elegida
 4. **Módulo nuevo (si aplica)**: Pregunto si va en la raíz o en un grupo, y edito/creo los archivos
-5. **Reinicio**: Indico al usuario que reinicie Claude para cargar los módulos
+5. **Reinicio**: Indico al usuario que abra una sesión nueva o reinicie Claude Code/Codex para cargar los módulos
 
 ¿Listo? Dime si tienes ya una carpeta de módulos o si quiero que cree la carpeta por defecto.

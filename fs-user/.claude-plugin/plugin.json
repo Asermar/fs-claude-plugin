@@ -1,7 +1,7 @@
 {
   "name": "fs-user",
-  "version": "2.0.0",
-  "description": "Plugin para usuarios del ERP FacturaScripts: análisis de datos, informes y asistencia en el uso del sistema.",
+  "version": "2.1.0",
+  "description": "Plugin para usuarios de FacturaScripts en Claude Code y Codex: análisis de datos, informes y asistencia documentada sobre el ERP.",
   "author": {
     "name": "Daniel Fernández Giménez",
     "email": "contacto@danielfg.es",
@@ -9,10 +9,5 @@
   },
   "license": "MIT",
   "keywords": ["FacturaScripts", "FS", "ERP", "informes", "análisis", "usuario"],
-  "skills": "./skills/",
-  "agents": [
-    "./agents/erp-guide.md",
-    "./agents/reporting-analyst.md",
-    "./agents/docs-expert.md"
-  ]
+  "skills": "./skills/"
 }

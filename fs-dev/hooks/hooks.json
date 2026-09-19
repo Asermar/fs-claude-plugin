@@ -1,12 +1,12 @@
 {
-  "description": "Detecta si el directorio actual pertenece a FacturaScripts e inyecta contexto de skills. Actualiza el año de copyright en archivos PHP, XML y Twig al crearlos o editarlos.",
+  "description": "Detecta proyectos FacturaScripts e inyecta contexto. Tras cada edición actualiza el copyright y ordena las clases PHP de forma secuencial en Claude Code y Codex.",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/detect-facturascripts.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/detect-facturascripts.sh\"",
             "timeout": 10
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/detect-facturascripts.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/detect-facturascripts.sh\"",
             "timeout": 10
           }
         ]
@@ -25,16 +25,11 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Write|Edit|apply_patch",
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/update-copyright.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/sort-class-members.sh",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/post-edit.py\"",
             "timeout": 30
           }
         ]

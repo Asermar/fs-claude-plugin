@@ -1,12 +1,6 @@
 ---
 name: skill-pull-request
-description: >
-  Buenas prácticas para crear pull requests bien estructurados en español, incluyendo la creación
-  de ramas con convención de nombres y enlaces a tareas del roadmap de FacturaScripts.
-  Activa esta skill siempre que el usuario pida crear un pull request, una PR, un merge request,
-  crear una rama nueva, hacer push de una rama, o cualquier variación como "abre una PR", "crea el
-  pull request", "sube la rama", "prepara la PR", "crea una rama para la tarea X", "branch para
-  el issue X", etc. También cuando pida revisar o mejorar una PR existente.
+description: Crea o revisa ramas y pull requests en español cuando el usuario pida preparar, publicar o mejorar una PR o una rama de trabajo.
 ---
 
 # Pull Requests y Ramas — Buenas Prácticas
@@ -60,13 +54,11 @@ gh pr create --title "<título>" --body "$(cat <<'EOF'
 
 ## Cómo probar
 <Pasos para verificar que funciona correctamente>
-
-🤖 Generado con [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
 ```
+
+No añadas firmas, marcas del asistente ni líneas `Co-Authored-By` salvo que el usuario las solicite expresamente.
 
 ### Título de la PR
 
