@@ -124,6 +124,8 @@ Actualiza el año en las cabeceras de copyright de los archivos PHP, XML y Twig 
 
 El script detecta el año actual y actualiza el rango si es necesario, sin modificar el resto de la cabecera.
 
+Solo actúa sobre archivos de FacturaScripts: los que declaran un namespace `FacturaScripts\\` o están dentro de un plugin (carpeta con `facturascripts.ini`) o de una instalación del core. Los archivos de otros proyectos, como Laravel o módulos de terceros, no se modifican aunque el plugin esté activo globalmente.
+
 ### Ordenación de miembros de clase
 
 Ordena automáticamente los miembros de las clases PHP según el estándar de FacturaScripts:
