@@ -22,7 +22,7 @@ El core lee el `facturascripts.ini` en `Core/Internal/Plugin.php` y marca el plu
 - `min_version < 2025` — desde 2025 el core rechaza cualquier plugin que declare menos de 2025.
 - `version_compare(PHP_VERSION, min_php, '<')` — la versión de PHP es insuficiente.
 
-`min_version` se lee con `floatval()`, así que las versiones se comparan **como decimales**: `2025.11` (2025.11) es **anterior** a `2025.2` (2025.2). Nunca ordenes versiones de FacturaScripts como si fueran semver ni con `sort -V`.
+`min_version` se lee con `floatval()`, así que las versiones se comparan **como decimales**: `2025.11` (2025.11) es **anterior** a `2025.2` (2025.2). Nunca ordenes versiones de FacturaScripts como si fueran semver ni con `sort -V`. Y una etiqueta del core vale lo que devuelve su `Kernel::version()`, no su nombre: `v2025.7` devuelve 2025.63, así que un plugin con `min_version = 2025.7` no se instala en ella.
 
 Consecuencias prácticas:
 
