@@ -64,6 +64,7 @@ Cada hallazgo indica cuándo se ejecuta (`Init::update()` al instalar, `Init::in
 ## Reglas de versión que debes aplicar
 
 - Las versiones se comparan como decimales, igual que `Kernel::version()`: `2025.11` es **anterior** a `2025.2`. No uses `sort -V` ni criterios semver.
+- Cada etiqueta del core vale lo que devuelve su `Kernel::version()`, que no siempre coincide con su nombre: `v2025.7` devuelve 2025.63.
 - El core rechaza cualquier plugin con `min_version` inferior a 2025, aunque el código sea compatible (`Core/Internal/Plugin.php`).
 - Un `min_version` demasiado alto es un error tanto como uno demasiado bajo: impide instalar el plugin donde funcionaría.
 

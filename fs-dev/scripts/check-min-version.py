@@ -11,7 +11,8 @@ La comprobación no usa el historial de commits sino la presencia del símbolo e
 cada etiqueta de versión (``git grep <patrón> <tag>``), de modo que los
 renombrados de archivos o los cambios de firma no falsean el resultado. Las
 versiones se comparan como decimales, igual que hace ``Kernel::version()``:
-2025.11 es anterior a 2025.2.
+2025.11 es anterior a 2025.2. Cada etiqueta vale lo que devuelve su propio
+``Kernel::version()``, que no siempre coincide con el nombre de la etiqueta.
 
 Uso:
     check-min-version.py <ruta_plugin> [--core <ruta_core>] [--json]
@@ -63,6 +64,8 @@ EXTENSION_NAMESPACES = ('Controller', 'Model', 'Lib', 'Table', 'Template', 'View
 CONFIDENCE_ORDER = {'alta': 3, 'media': 2, 'baja': 1}
 
 TAG_PATTERN = re.compile(r'^v?(\d{4}(?:\.\d+)?)$')
+KERNEL_VERSION_PATTERN = re.compile(
+    r'function\s+version\s*\(\s*\)\s*:\s*float\s*\{\s*return\s+(\d{4}(?:\.\d+)?)\s*;')
 USE_PATTERN = re.compile(r'^\s*use\s+(FacturaScripts\\[\w\\]+)(?:\s+as\s+(\w+))?\s*;', re.MULTILINE)
 EXTENDS_PATTERN = re.compile(r'\b(?:extends|implements)\s+([\w\\, ]+?)\s*[{\n]')
 STATIC_CALL_PATTERN = re.compile(r'(?<![\w$>])([A-Z]\w*)::\s*(\w+)\s*\(')
@@ -175,13 +178,28 @@ class CoreRepo:
         for line in result.stdout.splitlines():
             match = TAG_PATTERN.match(line.strip())
             if match:
-                tags.append((float(match.group(1)), line.strip()))
+                tag = line.strip()
+                tags.append((self.kernel_version(tag) or float(match.group(1)), tag))
 
         if not tags:
             raise AuditError(f'El repositorio {self.path} no tiene etiquetas de versión de FacturaScripts.')
 
         # Las versiones de FacturaScripts son decimales: 2025.11 es anterior a 2025.2.
         self.tags = sorted(tags, key=lambda item: item[0])
+
+    def kernel_version(self, tag: str) -> float | None:
+        """Devuelve la versión que declara ``Kernel::version()`` en la etiqueta.
+
+        El core compara el ``min_version`` de un plugin con ``Kernel::version()``,
+        no con el nombre de la etiqueta, y no siempre coinciden: la etiqueta
+        v2025.7 devuelve 2025.63. Las etiquetas antiguas sin ``Core/Kernel.php``
+        devuelven ``None`` y se ordenan por su nombre.
+        """
+        result = self.git('show', f'{tag}:Core/Kernel.php')
+        if result.returncode != 0:
+            return None
+        match = KERNEL_VERSION_PATTERN.search(result.stdout)
+        return float(match.group(1)) if match else None
 
     def exists_in(self, tag: str, symbol: Symbol) -> bool:
         """Indica si alguno de los patrones del símbolo aparece en la etiqueta."""

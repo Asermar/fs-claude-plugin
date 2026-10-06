@@ -112,6 +112,89 @@ class VersionOrderTest(unittest.TestCase):
             self.assertEqual('v2026', repo.target_tag(2025.5)[1])
 
 
+def build_kernel_core(root: Path, releases: list[tuple[str, str, str]]) -> Path:
+    """Crea un core cuyas etiquetas declaran su versión en ``Kernel::version()``.
+
+    Cada entrada es ``(etiqueta, versión del Kernel, métodos de Tools)``.
+    """
+    core = root / 'core'
+    (core / 'Core').mkdir(parents=True)
+    subprocess.run(('git', 'init', '-q', str(core)), check=True, capture_output=True)
+    for tag, version, methods in releases:
+        (core / 'Core' / 'Kernel.php').write_text(
+            '<?php\nfinal class Kernel\n{\n    public static function version(): float\n'
+            f'    {{\n        return {version};\n    }}\n}}\n')
+        (core / 'Core' / 'Tools.php').write_text(
+            '<?php\nclass Tools\n{\n' + ''.join(
+                f'    public static function {name}() {{}}\n' for name in methods.split()) + '}\n')
+        for args in (('add', '-A'),
+                     ('-c', 'user.email=test@test', '-c', 'user.name=test', 'commit', '-m', tag),
+                     ('tag', tag)):
+            subprocess.run(('git', '-C', str(core), *args), check=True, capture_output=True)
+    return core
+
+
+class KernelVersionTest(unittest.TestCase):
+    """Cada etiqueta vale lo que devuelve su Kernel::version(), no su nombre."""
+
+    def audit_plugin(self, tmp: str, core: Path, min_version: str, body: str) -> dict:
+        """Ejecuta la auditoría completa y devuelve el informe."""
+        core_repo = CHECKER.CoreRepo(path=core)
+        core_repo.load_tags()
+        plugin = build_plugin(Path(tmp), min_version, body)
+        info = CHECKER.read_plugin_ini(plugin)
+        symbols, external = CHECKER.collect_symbols(plugin, include_tests=False)
+        target = core_repo.target_tag(info.min_version)
+        results = CHECKER.audit(symbols, core_repo, target, workers=2)
+        return CHECKER.build_report(info, core_repo, target, results, external)
+
+    def test_target_tag_uses_kernel_version(self) -> None:
+        """v2025.7 devuelve 2025.63: un plugin con min_version 2025.7 no instala en ella."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = CHECKER.CoreRepo(path=build_kernel_core(Path(tmp), [
+                ('v2025.7', '2025.63', 'trans'),
+                ('v2025.71', '2025.71', 'trans'),
+            ]))
+            repo.load_tags()
+
+            self.assertIn((2025.63, 'v2025.7'), repo.tags)
+            self.assertEqual('v2025.71', repo.target_tag(2025.7)[1])
+            self.assertEqual('v2025.7', repo.target_tag(2025.63)[1])
+
+    def test_tag_named_below_its_kernel_version_is_audited(self) -> None:
+        """v2025.2 devuelve 2025.21: un plugin con min_version 2025.21 instala en ella."""
+        with tempfile.TemporaryDirectory() as tmp:
+            core = build_kernel_core(Path(tmp), [
+                ('v2025.2', '2025.21', 'trans'),
+                ('v2025.3', '2025.3', 'trans decimals'),
+            ])
+            report = self.audit_plugin(tmp, core, '2025.21', (
+                '<?php\n'
+                'use FacturaScripts\\Core\\Tools;\n'
+                'class Init { public function init(): void { Tools::decimals(); } }\n'
+            ))
+
+            self.assertEqual('v2025.2', report['core']['version_objetivo'])
+            self.assertFalse(report['plugin']['cumple'])
+            self.assertEqual(2025.3, report['plugin']['min_version_calculado'])
+
+    def test_required_min_version_is_the_kernel_version(self) -> None:
+        """Un método añadido en v2025.7 exige 2025.63, no 2025.7."""
+        with tempfile.TemporaryDirectory() as tmp:
+            core = build_kernel_core(Path(tmp), [
+                ('v2025.4', '2025.4', 'trans'),
+                ('v2025.7', '2025.63', 'trans decimals'),
+            ])
+            report = self.audit_plugin(tmp, core, '2025.4', (
+                '<?php\n'
+                'use FacturaScripts\\Core\\Tools;\n'
+                'class Init { public function init(): void { Tools::decimals(); } }\n'
+            ))
+
+            self.assertFalse(report['plugin']['cumple'])
+            self.assertEqual(2025.63, report['plugin']['min_version_calculado'])
+
+
 class IniTest(unittest.TestCase):
     """Comprueba la lectura del facturascripts.ini."""
 
