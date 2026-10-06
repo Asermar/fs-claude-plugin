@@ -1,4 +1,5 @@
 import { fsClient } from '../../fs/client.js';
+import { dateRangeFilters } from '../../metadata/dateRange.js';
 export const purchasingTools = [
     {
         name: 'get_presupuestoproveedores',
@@ -742,6 +743,7 @@ export async function handlePurchasingTool(name, args) {
         case 'get_presupuestoproveedores': {
             const params = input;
             const result = await fsClient.get('/presupuestoproveedores', {
+                ...dateRangeFilters('get_presupuestoproveedores', input),
                 offset: params.offset,
                 limit: params.limit,
                 codproveedor: params.codproveedor,
@@ -766,6 +768,7 @@ export async function handlePurchasingTool(name, args) {
         case 'get_pedidoproveedores': {
             const params = input;
             const result = await fsClient.get('/pedidoproveedores', {
+                ...dateRangeFilters('get_pedidoproveedores', input),
                 offset: params.offset,
                 limit: params.limit,
                 codproveedor: params.codproveedor,
@@ -790,6 +793,7 @@ export async function handlePurchasingTool(name, args) {
         case 'get_albaranproveedores': {
             const params = input;
             const result = await fsClient.get('/albaranproveedores', {
+                ...dateRangeFilters('get_albaranproveedores', input),
                 offset: params.offset,
                 limit: params.limit,
                 codproveedor: params.codproveedor,
@@ -813,6 +817,7 @@ export async function handlePurchasingTool(name, args) {
         case 'get_facturaproveedores': {
             const params = input;
             const result = await fsClient.get('/facturaproveedores', {
+                ...dateRangeFilters('get_facturaproveedores', input),
                 offset: params.offset,
                 limit: params.limit,
                 codproveedor: params.codproveedor,
@@ -838,6 +843,7 @@ export async function handlePurchasingTool(name, args) {
         case 'get_reciboproveedores': {
             const params = input;
             const result = await fsClient.get('/reciboproveedores', {
+                ...dateRangeFilters('get_reciboproveedores', input),
                 offset: params.offset,
                 limit: params.limit,
                 codproveedor: params.codproveedor,
@@ -851,6 +857,7 @@ export async function handlePurchasingTool(name, args) {
         case 'get_pagoproveedores': {
             const params = input;
             const result = await fsClient.get('/pagoproveedores', {
+                ...dateRangeFilters('get_pagoproveedores', input),
                 offset: params.offset,
                 limit: params.limit,
                 idrecibo: params.idrecibo,
