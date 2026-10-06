@@ -44,6 +44,8 @@ IGNORED_MEMBERS = frozenset({
     'xpath', 'children', 'attributes', 'asXML', 'addChild', 'addAttribute',
     'prepare', 'execute', 'fetch', 'fetchAll', 'bindValue',
 })
+# PHP no distingue mayúsculas en los nombres de método: se comparan en minúsculas.
+IGNORED_METHODS = frozenset(name.lower() for name in IGNORED_MEMBERS)
 
 # Clases que no pertenecen al core de FacturaScripts.
 IGNORED_CLASSES = frozenset({
@@ -94,6 +96,15 @@ class Symbol:
     origin: str
     confidence: str = 'alta'
     self_called: bool = False
+
+    @property
+    def case_insensitive(self) -> bool:
+        """Indica si el símbolo se busca sin distinguir mayúsculas.
+
+        PHP no las distingue en clases ni métodos, pero sí en las propiedades y en
+        el nombre de un ``pipe()``, que el core usa como clave de un array.
+        """
+        return self.kind not in ('propiedad', 'pipe')
 
     @property
     def key(self) -> tuple:
@@ -178,12 +189,12 @@ class CoreRepo:
 
     def exists_in(self, tag: str, symbol: Symbol) -> bool:
         """Indica si alguno de los patrones del símbolo aparece en la etiqueta."""
-        cache_key = (tag, symbol.patterns, symbol.pathspecs)
+        cache_key = (tag, symbol.patterns, symbol.pathspecs, symbol.case_insensitive)
         with self._lock:
             if cache_key in self._cache:
                 return self._cache[cache_key]
 
-        args = ['grep', '-q', '-F']
+        args = ['grep', '-q', '-F'] + (['-i'] if symbol.case_insensitive else [])
         for pattern in symbol.patterns:
             args += ['-e', pattern]
         args += [tag, '--', *symbol.pathspecs]
@@ -481,6 +492,7 @@ def collect_symbols(plugin_dir: Path, include_tests: bool) -> tuple[list[Symbol]
     """Extrae del plugin los símbolos del core y las dependencias externas."""
     files = php_files(plugin_dir, include_tests)
     own_methods, own_properties = plugin_members(files)
+    own_methods_lower = {name.lower() for name in own_methods}
     called_methods = plugin_calls(plugin_dir)
     own_columns = plugin_table_columns(plugin_dir)
     symbols: dict[tuple, Symbol] = {}
@@ -537,7 +549,7 @@ def collect_symbols(plugin_dir: Path, include_tests: bool) -> tuple[list[Symbol]
 
         # 3. Llamadas estáticas a clases del core.
         for class_name, method in STATIC_CALL_PATTERN.findall(content):
-            if class_name in IGNORED_CLASSES or method in IGNORED_MEMBERS:
+            if class_name in IGNORED_CLASSES or method.lower() in IGNORED_METHODS:
                 continue
             fqcn = aliases.get(class_name)
             if fqcn is None:
@@ -587,7 +599,7 @@ def collect_symbols(plugin_dir: Path, include_tests: bool) -> tuple[list[Symbol]
 
         # 5. Métodos de instancia que no define el plugin.
         for method in METHOD_CALL_PATTERN.findall(content):
-            if method in IGNORED_MEMBERS or method in own_methods:
+            if method.lower() in IGNORED_METHODS or method.lower() in own_methods_lower:
                 continue
             add(Symbol(
                 kind='método',
