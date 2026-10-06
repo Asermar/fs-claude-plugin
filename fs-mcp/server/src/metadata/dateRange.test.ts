@@ -173,3 +173,29 @@ describe('contrato esquema <-> handler', () => {
         assert.ok(comprobadas >= 38, `se esperaban al menos 38 tools con rango, hay ${comprobadas}`);
     });
 });
+
+describe('get_emailsentes: filtros de columna y de rango juntos', () => {
+    it('reenvía addressee y subject y, a la vez, el rango de date', async () => {
+        assert.ok(
+            dateColumnsForTool('get_emailsentes').includes('date'),
+            'email_sent debería tener la columna de fecha date',
+        );
+
+        const enviados = await paramsEnviados(handleCommunicationTool, 'get_emailsentes', {
+            connection: 'test',
+            addressee: 'cliente@example.com',
+            subject: 'Factura',
+            date_gte: '2024-01-01',
+            date_lte: '2024-01-31',
+        });
+
+        assert.equal(enviados['addressee'], 'cliente@example.com');
+        assert.equal(enviados['subject'], 'Factura');
+        assert.equal(enviados['date_gte'], '2024-01-01');
+        assert.equal(enviados['date_lte'], '2024-01-31');
+        // Los nombres anteriores apuntaban a columnas que email_sent no tiene.
+        for (const viejo of ['destinatario', 'asunto', 'fecha']) {
+            assert.equal(enviados[viejo], undefined, `no debería enviar ${viejo}`);
+        }
+    });
+});
