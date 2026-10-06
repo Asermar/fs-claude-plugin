@@ -44,6 +44,7 @@ Opciones relevantes:
 - `--include-tests` — analiza también `Test/`, que por defecto se excluye porque usa PHPUnit y no el core.
 - `--min-confidence alta|media|baja` — filtra el ruido: `alta` deja solo clases, llamadas estáticas resueltas, métodos de instancia cuyo receptor tiene tipo conocido y pipes.
 - `--plugins-dir` — directorio `Plugins/` donde buscar los símbolos que aporten otros plugins. Se deduce solo cuando el plugin está instalado.
+- `--max-version` — versión del core que el plugin tiene que soportar. Sin ella, los símbolos eliminados se informan pero no cambian el resultado; con ella, cualquiera retirado en esa versión o antes lo hace incumplir.
 
 El script comprueba la **presencia de cada símbolo en cada etiqueta de versión** del repositorio del core (`git grep <patrón> <tag>`), con búsqueda por bisección. No usa el historial de commits, de modo que un renombrado de archivo o un cambio de firma no falsean el resultado.
 
@@ -55,7 +56,7 @@ Código de salida: `0` cumple, `1` incumple, `2` error de configuración (por ej
 | --- | --- | --- |
 | `ok` | El símbolo existe en la versión declarada | Nada |
 | `posterior` | Se añadió en una versión más nueva | Subir `min_version` o dejar de usarlo |
-| `eliminado` | Existió pero ya no está en la última versión | El plugin se romperá al actualizar el core |
+| `eliminado` | Existió pero ya no está en la última versión | El plugin se romperá al actualizar el core; «Funciona hasta» dice en qué versión |
 | `aportado por plugin` | Lo declara otro plugin instalado | Comprobar que está en `require` |
 | `aportado por vendor` | Lo declara una librería de `vendor/` | Nada, no afecta al `min_version` |
 | `método añadido` | La extensión añade el método a la clase, y algo del plugin lo invoca | Nada |

@@ -691,5 +691,78 @@ class CliTest(unittest.TestCase):
             self.assertEqual('v2025', report['core']['version_objetivo'])
 
 
+class RemovedApiTest(unittest.TestCase):
+    """Hasta qué versión funciona el plugin, y la versión máxima opcional."""
+
+    USES_ANTIGUO = (
+        '<?php\n'
+        'use FacturaScripts\\Core\\Lib\\Antiguo;\n'
+        'class Init { public function init(): void { $a = new Antiguo(); } }\n'
+    )
+
+    def audit_plugin(self, tmp: str, body: str, max_version: float | None = None) -> dict:
+        """Ejecuta la auditoría completa, con versión máxima si se indica."""
+        core_repo = CHECKER.CoreRepo(path=build_core(Path(tmp)))
+        core_repo.load_tags()
+        plugin = build_plugin(Path(tmp), '2025', body)
+        info = CHECKER.read_plugin_ini(plugin)
+        symbols, external = CHECKER.collect_symbols(plugin, include_tests=False)
+        target = core_repo.target_tag(info.min_version)
+        results = CHECKER.audit(symbols, core_repo, target, workers=2)
+        max_target = core_repo.target_tag(max_version) if max_version else None
+        return CHECKER.build_report(info, core_repo, target, results, external, max_target)
+
+    def test_works_until_the_last_release_with_every_symbol(self) -> None:
+        """Antiguo desaparece en v2026: el plugin funciona hasta v2025."""
+        with tempfile.TemporaryDirectory() as tmp:
+            report = self.audit_plugin(tmp, self.USES_ANTIGUO)
+
+            self.assertEqual('v2025', report['plugin']['funciona_hasta'])
+            self.assertTrue(report['plugin']['cumple'])
+            self.assertEqual([], report['plugin']['retirados'])
+            self.assertIsNone(report['core']['version_maxima'])
+
+    def test_works_until_latest_without_removed_symbols(self) -> None:
+        """Sin símbolos eliminados, funciona hasta la última versión conocida."""
+        with tempfile.TemporaryDirectory() as tmp:
+            report = self.audit_plugin(tmp, '<?php\nclass Init {}\n')
+
+            self.assertEqual('v2026', report['plugin']['funciona_hasta'])
+
+    def test_symbol_removed_by_max_version_fails(self) -> None:
+        """Con versión máxima v2026, usar Antiguo hace incumplir."""
+        with tempfile.TemporaryDirectory() as tmp:
+            report = self.audit_plugin(tmp, self.USES_ANTIGUO, max_version=2026)
+
+            self.assertFalse(report['plugin']['cumple'])
+            self.assertEqual(['FacturaScripts\\Core\\Lib\\Antiguo'], report['plugin']['retirados'])
+            self.assertEqual('v2026', report['core']['version_maxima'])
+            self.assertEqual(2025, report['plugin']['min_version_calculado'])
+
+    def test_symbol_still_present_at_max_version_passes(self) -> None:
+        """Con versión máxima v2025, Antiguo todavía existe y el plugin cumple."""
+        with tempfile.TemporaryDirectory() as tmp:
+            report = self.audit_plugin(tmp, self.USES_ANTIGUO, max_version=2025)
+
+            self.assertTrue(report['plugin']['cumple'])
+            self.assertEqual([], report['plugin']['retirados'])
+
+    def test_cli_exit_code_with_max_version(self) -> None:
+        """--max-version hace que el script devuelva 1; sin él, 0."""
+        with tempfile.TemporaryDirectory() as tmp:
+            core = build_core(Path(tmp))
+            plugin = build_plugin(Path(tmp), '2025', self.USES_ANTIGUO)
+            command = (sys.executable, str(SCRIPT_PATH), str(plugin), '--core', str(core))
+
+            without = subprocess.run(command, capture_output=True, text=True, check=False)
+            self.assertEqual(0, without.returncode)
+            self.assertIn('Funciona hasta: v2025', without.stdout)
+
+            failing = subprocess.run((*command, '--max-version', '2026'),
+                                     capture_output=True, text=True, check=False)
+            self.assertEqual(1, failing.returncode)
+            self.assertIn('INCUMPLE. Usa símbolos que ya no existen en v2026', failing.stdout)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -14,9 +14,14 @@ versiones se comparan como decimales, igual que hace ``Kernel::version()``:
 2025.11 es anterior a 2025.2. Cada etiqueta vale lo que devuelve su propio
 ``Kernel::version()``, que no siempre coincide con el nombre de la etiqueta.
 
+Además informa hasta qué versión funciona el plugin: la última en la que
+existen todos los símbolos que usa. Con ``--max-version`` el resultado pasa a
+ser incumple si alguno se retiró en esa versión o antes.
+
 Uso:
     check-min-version.py <ruta_plugin> [--core <ruta_core>] [--json]
                          [--include-tests] [--min-confidence alta|media|baja]
+                         [--max-version <versión>]
 
 El script solo informa: nunca modifica el ``facturascripts.ini`` del plugin.
 """
@@ -790,11 +795,34 @@ def build_warnings(plugin: PluginInfo, core: CoreRepo, results: list[SymbolResul
     return warnings
 
 
+def works_until(core: CoreRepo, results: list[SymbolResult]) -> str:
+    """Devuelve la última etiqueta en la que existen todos los símbolos del plugin."""
+    versions = {tag: version for version, tag in core.tags}
+    removed = [item.removed_after for item in results
+               if item.status == 'eliminado' and item.removed_after]
+    return min(removed, key=lambda tag: versions.get(tag, 0), default=core.tags[-1][1])
+
+
+def retired_by(core: CoreRepo, results: list[SymbolResult],
+               max_target: tuple[float, str]) -> list[SymbolResult]:
+    """Devuelve los símbolos que ya no existen en la versión máxima indicada."""
+    versions = {tag: version for version, tag in core.tags}
+    return [item for item in results
+            if item.status == 'eliminado' and item.removed_after
+            and versions.get(item.removed_after, 0) < max_target[0]]
+
+
 def build_report(plugin: PluginInfo, core: CoreRepo, target: tuple[float, str],
-                 results: list[SymbolResult], external: list[str]) -> dict:
-    """Construye la estructura de datos del informe final."""
+                 results: list[SymbolResult], external: list[str],
+                 max_target: tuple[float, str] | None = None) -> dict:
+    """Construye la estructura de datos del informe final.
+
+    Sin ``max_target``, los símbolos eliminados se informan pero no cambian el
+    resultado. Con él, cualquiera retirado en esa versión o antes lo hace incumplir.
+    """
     later = [item for item in results if item.status == 'posterior']
     required = max([item.since_version or 0 for item in later] + [plugin.min_version, 2025.0])
+    retired = retired_by(core, results, max_target) if max_target else []
 
     return {
         'plugin': {
@@ -804,12 +832,15 @@ def build_report(plugin: PluginInfo, core: CoreRepo, target: tuple[float, str],
             'min_version_calculado': required,
             'min_php': plugin.min_php,
             'require': list(plugin.require),
-            'cumple': not later and plugin.min_version >= 2025,
+            'cumple': not later and plugin.min_version >= 2025 and not retired,
+            'funciona_hasta': works_until(core, results),
+            'retirados': [item.symbol.label for item in retired],
             'path': str(plugin.path),
         },
         'core': {
             'path': str(core.path),
             'version_objetivo': target[1],
+            'version_maxima': max_target[1] if max_target else None,
             'ultima_version': core.tags[-1][1],
             'total_versiones': len(core.tags),
         },
@@ -840,18 +871,31 @@ def print_report(report: dict, results: list[SymbolResult]) -> None:
     print(f"min_version declarado: {plugin['min_version_declarado']:g}")
     print(f"Core: {core['path']} ({core['total_versiones']} versiones, última {core['ultima_version']})")
     print(f"Versión comprobada: {core['version_objetivo']}")
+    if core['version_maxima']:
+        print(f"Versión máxima comprobada: {core['version_maxima']}")
+    print(f"Funciona hasta: {plugin['funciona_hasta']}")
     print()
 
     later = [item for item in results if item.status == 'posterior']
+    retired = [item for item in results if item.symbol.label in plugin['retirados']]
     if plugin['cumple']:
         print(f"RESULTADO: CUMPLE. Todos los símbolos localizados existen en {core['version_objetivo']}.")
-    else:
+    elif later or plugin['min_version_declarado'] < 2025:
         print(f"RESULTADO: INCUMPLE. min_version debería ser {plugin['min_version_calculado']:g}")
+    else:
+        print(f"RESULTADO: INCUMPLE. Usa símbolos que ya no existen en {core['version_maxima']}.")
+    if not plugin['cumple']:
         if later:
             print()
             print('Símbolos que no existen en la versión declarada:')
             for item in sorted(later, key=lambda entry: -(entry.since_version or 0)):
                 print(f"  - {item.symbol.label} ({item.symbol.kind}) añadido en {item.since}"
+                      f"  [{item.symbol.origin}, confianza {item.symbol.confidence}]")
+        if retired:
+            print()
+            print(f"Símbolos retirados en {core['version_maxima']} o antes:")
+            for item in retired:
+                print(f"  - {item.symbol.label} ({item.symbol.kind}) presente hasta {item.removed_after}"
                       f"  [{item.symbol.origin}, confianza {item.symbol.confidence}]")
     print()
 
@@ -911,6 +955,9 @@ def main(argv: list[str] | None = None) -> int:
                         help='Descarta los símbolos con confianza inferior a la indicada')
     parser.add_argument('--plugins-dir',
                         help='Directorio Plugins/ donde buscar los símbolos que aporten otros plugins')
+    parser.add_argument('--max-version', type=float,
+                        help='Versión del core que el plugin debe soportar: incumple si usa algo retirado '
+                             'en ella o antes')
     parser.add_argument('--workers', type=int, default=8,
                         help='Número de consultas simultáneas a git')
     args = parser.parse_args(argv)
@@ -933,7 +980,8 @@ def main(argv: list[str] | None = None) -> int:
     results = audit(symbols, core, target, args.workers)
     resolve_providers(results, find_plugins_dir(args.plugins_dir, plugin_dir), plugin_dir.name,
                       [core.path / 'vendor', plugin_dir / 'vendor'], plugin.require, args.workers)
-    report = build_report(plugin, core, target, results, external)
+    max_target = core.target_tag(args.max_version) if args.max_version else None
+    report = build_report(plugin, core, target, results, external, max_target)
 
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
