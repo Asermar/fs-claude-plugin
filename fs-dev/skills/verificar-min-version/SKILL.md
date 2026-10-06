@@ -35,7 +35,7 @@ La auditoría tiene dos partes independientes: la **compatibilidad** con el core
 | --- | --- |
 | `--json` | Informe completo para procesar símbolo a símbolo |
 | `--include-tests` | Analiza también `Test/`, excluido por defecto |
-| `--min-confidence alta` | Deja solo clases, llamadas estáticas y pipes |
+| `--min-confidence alta` | Deja solo clases, llamadas estáticas, métodos con receptor tipado y pipes |
 | `--plugins-dir` | Directorio `Plugins/` para atribuir los símbolos de otros plugins |
 | `--max-version X` | Incumple si el plugin usa algo retirado en la versión `X` del core o antes |
 | `--workers N` | Ajusta las consultas simultáneas a git |
@@ -65,6 +65,7 @@ Cada hallazgo indica cuándo se ejecuta (`Init::update()` al instalar, `Init::in
 ## Reglas de versión que debes aplicar
 
 - Las versiones se comparan como decimales, igual que `Kernel::version()`: `2025.11` es **anterior** a `2025.2`. No uses `sort -V` ni criterios semver.
+- Cada etiqueta del core vale lo que devuelve su `Kernel::version()`, que no siempre coincide con su nombre: `v2025.7` devuelve 2025.63.
 - El core rechaza cualquier plugin con `min_version` inferior a 2025, aunque el código sea compatible (`Core/Internal/Plugin.php`).
 - Un `min_version` demasiado alto es un error tanto como uno demasiado bajo: impide instalar el plugin donde funcionaría.
 
@@ -89,7 +90,7 @@ extensión y nada del plugin invoca el método: esa extensión seguramente nunca
 
 ## Límites del análisis
 
-La auditoría de compatibilidad es estática y solo audita PHP: no resuelve tipos, no comprueba las funciones ni los bloques de plantilla que usan los Twig, ni los XMLView, ni el JavaScript, y no audita los plugins declarados en `require`. Las plantillas solo se leen para saber qué métodos invoca el plugin.
+La auditoría de compatibilidad es estática y solo audita PHP: infiere el tipo del receptor solo a un nivel (`new Clase()`, parámetros y propiedades tipados), no comprueba las funciones ni los bloques de plantilla que usan los Twig, ni los XMLView, ni el JavaScript, y no audita los plugins declarados en `require`. Las plantillas solo se leen para saber qué métodos invoca el plugin.
 
 Por eso un `min_version` más alto que el calculado puede estar justificado por un cambio del core que esta herramienta no ve. Declara siempre estas limitaciones en la conclusión y marca como dudosos los símbolos que no hayas verificado a mano.
 
