@@ -112,6 +112,89 @@ class VersionOrderTest(unittest.TestCase):
             self.assertEqual('v2026', repo.target_tag(2025.5)[1])
 
 
+def build_kernel_core(root: Path, releases: list[tuple[str, str, str]]) -> Path:
+    """Crea un core cuyas etiquetas declaran su versión en ``Kernel::version()``.
+
+    Cada entrada es ``(etiqueta, versión del Kernel, métodos de Tools)``.
+    """
+    core = root / 'core'
+    (core / 'Core').mkdir(parents=True)
+    subprocess.run(('git', 'init', '-q', str(core)), check=True, capture_output=True)
+    for tag, version, methods in releases:
+        (core / 'Core' / 'Kernel.php').write_text(
+            '<?php\nfinal class Kernel\n{\n    public static function version(): float\n'
+            f'    {{\n        return {version};\n    }}\n}}\n')
+        (core / 'Core' / 'Tools.php').write_text(
+            '<?php\nclass Tools\n{\n' + ''.join(
+                f'    public static function {name}() {{}}\n' for name in methods.split()) + '}\n')
+        for args in (('add', '-A'),
+                     ('-c', 'user.email=test@test', '-c', 'user.name=test', 'commit', '-m', tag),
+                     ('tag', tag)):
+            subprocess.run(('git', '-C', str(core), *args), check=True, capture_output=True)
+    return core
+
+
+class KernelVersionTest(unittest.TestCase):
+    """Cada etiqueta vale lo que devuelve su Kernel::version(), no su nombre."""
+
+    def audit_plugin(self, tmp: str, core: Path, min_version: str, body: str) -> dict:
+        """Ejecuta la auditoría completa y devuelve el informe."""
+        core_repo = CHECKER.CoreRepo(path=core)
+        core_repo.load_tags()
+        plugin = build_plugin(Path(tmp), min_version, body)
+        info = CHECKER.read_plugin_ini(plugin)
+        symbols, external = CHECKER.collect_symbols(plugin, include_tests=False)
+        target = core_repo.target_tag(info.min_version)
+        results = CHECKER.audit(symbols, core_repo, target, workers=2)
+        return CHECKER.build_report(info, core_repo, target, results, external)
+
+    def test_target_tag_uses_kernel_version(self) -> None:
+        """v2025.7 devuelve 2025.63: un plugin con min_version 2025.7 no instala en ella."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = CHECKER.CoreRepo(path=build_kernel_core(Path(tmp), [
+                ('v2025.7', '2025.63', 'trans'),
+                ('v2025.71', '2025.71', 'trans'),
+            ]))
+            repo.load_tags()
+
+            self.assertIn((2025.63, 'v2025.7'), repo.tags)
+            self.assertEqual('v2025.71', repo.target_tag(2025.7)[1])
+            self.assertEqual('v2025.7', repo.target_tag(2025.63)[1])
+
+    def test_tag_named_below_its_kernel_version_is_audited(self) -> None:
+        """v2025.2 devuelve 2025.21: un plugin con min_version 2025.21 instala en ella."""
+        with tempfile.TemporaryDirectory() as tmp:
+            core = build_kernel_core(Path(tmp), [
+                ('v2025.2', '2025.21', 'trans'),
+                ('v2025.3', '2025.3', 'trans decimals'),
+            ])
+            report = self.audit_plugin(tmp, core, '2025.21', (
+                '<?php\n'
+                'use FacturaScripts\\Core\\Tools;\n'
+                'class Init { public function init(): void { Tools::decimals(); } }\n'
+            ))
+
+            self.assertEqual('v2025.2', report['core']['version_objetivo'])
+            self.assertFalse(report['plugin']['cumple'])
+            self.assertEqual(2025.3, report['plugin']['min_version_calculado'])
+
+    def test_required_min_version_is_the_kernel_version(self) -> None:
+        """Un método añadido en v2025.7 exige 2025.63, no 2025.7."""
+        with tempfile.TemporaryDirectory() as tmp:
+            core = build_kernel_core(Path(tmp), [
+                ('v2025.4', '2025.4', 'trans'),
+                ('v2025.7', '2025.63', 'trans decimals'),
+            ])
+            report = self.audit_plugin(tmp, core, '2025.4', (
+                '<?php\n'
+                'use FacturaScripts\\Core\\Tools;\n'
+                'class Init { public function init(): void { Tools::decimals(); } }\n'
+            ))
+
+            self.assertFalse(report['plugin']['cumple'])
+            self.assertEqual(2025.63, report['plugin']['min_version_calculado'])
+
+
 class IniTest(unittest.TestCase):
     """Comprueba la lectura del facturascripts.ini."""
 
@@ -301,6 +384,100 @@ class NoiseFilterTest(unittest.TestCase):
             self.assertTrue(pipes["pipe('getTwoFactorQR')"])
 
 
+def build_request_core(root: Path) -> Path:
+    """Crea un core en el que dos clases declaran un método con el mismo nombre.
+
+    v2025: Response tiene json(); Request no.
+    v2026: Request gana json().
+    """
+    core = root / 'core'
+    (core / 'Core' / 'Model').mkdir(parents=True)
+    subprocess.run(('git', 'init', '-q', str(core)), check=True, capture_output=True)
+    (core / 'Core' / 'Response.php').write_text(
+        '<?php\nclass Response\n{\n    public function json(array $data): void {}\n}\n')
+    (core / 'Core' / 'Model' / 'ModelClass.php').write_text(
+        '<?php\nabstract class ModelClass\n{\n    public function save(): bool {}\n}\n')
+    (core / 'Core' / 'Model' / 'Cliente.php').write_text(
+        '<?php\nclass Cliente extends ModelClass\n{\n}\n')
+    request = core / 'Core' / 'Request.php'
+    for tag, body in (('v2025', ''), ('v2026', '    public function json() {}\n')):
+        request.write_text('<?php\nclass Request\n{\n    public function host() {}\n' + body + '}\n')
+        for args in (('add', '-A'),
+                     ('-c', 'user.email=test@test', '-c', 'user.name=test', 'commit', '-m', tag),
+                     ('tag', tag)):
+            subprocess.run(('git', '-C', str(core), *args), check=True, capture_output=True)
+    return core
+
+
+class TypedMethodCallTest(unittest.TestCase):
+    """Un ->metodo() se busca en la clase del receptor cuando se conoce."""
+
+    def audit_plugin(self, tmp: str, body: str) -> dict[str, dict]:
+        """Audita el plugin y devuelve los símbolos indexados por su etiqueta."""
+        core_repo = CHECKER.CoreRepo(path=build_request_core(Path(tmp)))
+        core_repo.load_tags()
+        plugin = build_plugin(Path(tmp), '2025', body)
+        info = CHECKER.read_plugin_ini(plugin)
+        symbols, external = CHECKER.collect_symbols(plugin, include_tests=False)
+        target = core_repo.target_tag(info.min_version)
+        results = CHECKER.audit(symbols, core_repo, target, workers=2)
+        report = CHECKER.build_report(info, core_repo, target, results, external)
+        return {item['simbolo']: item for item in report['symbols']}
+
+    def test_typed_parameter_is_resolved_against_its_class(self) -> None:
+        """Request::json() es de v2026 aunque Response::json() exista desde v2025."""
+        with tempfile.TemporaryDirectory() as tmp:
+            symbols = self.audit_plugin(tmp, (
+                '<?php\n'
+                'use FacturaScripts\\Core\\Request;\n'
+                'class Init { public function leer(Request $request) { return $request->json(); } }\n'
+            ))
+
+            self.assertNotIn('->json()', symbols)
+            self.assertEqual('posterior', symbols['Request->json()']['estado'])
+            self.assertEqual('v2026', symbols['Request->json()']['desde'])
+            self.assertEqual('alta', symbols['Request->json()']['confianza'])
+
+    def test_new_and_typed_property_are_resolved(self) -> None:
+        """$x = new Clase() y una propiedad tipada también fijan la clase."""
+        with tempfile.TemporaryDirectory() as tmp:
+            symbols = self.audit_plugin(tmp, (
+                '<?php\n'
+                'use FacturaScripts\\Core\\Request;\n'
+                'class Init {\n'
+                '    private Request $peticion;\n'
+                '    public function a() { $r = new Request(); return $r->host(); }\n'
+                '    public function b() { return $this->peticion->json(); }\n'
+                '}\n'
+            ))
+
+            self.assertEqual('ok', symbols['Request->host()']['estado'])
+            self.assertEqual('posterior', symbols['Request->json()']['estado'])
+
+    def test_inherited_method_still_widens_to_core(self) -> None:
+        """Si la clase no declara el método, se busca en sus padres por todo Core/."""
+        with tempfile.TemporaryDirectory() as tmp:
+            symbols = self.audit_plugin(tmp, (
+                '<?php\n'
+                'use FacturaScripts\\Dinamic\\Model\\Cliente;\n'
+                'class Init { public function a(Cliente $cliente) { return $cliente->save(); } }\n'
+            ))
+
+            self.assertEqual('ok', symbols['Cliente->save()']['estado'])
+            self.assertEqual('media', symbols['Cliente->save()']['confianza'])
+
+    def test_unknown_receiver_keeps_the_generic_search(self) -> None:
+        """Sin tipo conocido se mantiene la búsqueda por nombre en todo Core/."""
+        with tempfile.TemporaryDirectory() as tmp:
+            symbols = self.audit_plugin(tmp, (
+                '<?php\n'
+                'class Init { public function a($algo) { return $algo->json(); } }\n'
+            ))
+
+            self.assertEqual('ok', symbols['->json()']['estado'])
+            self.assertEqual('media', symbols['->json()']['confianza'])
+
+
 class ProviderTest(unittest.TestCase):
     """Comprueba la atribución de símbolos a otros plugins o a vendor."""
 
@@ -388,6 +565,70 @@ class PipeAuditTest(unittest.TestCase):
             self.assertEqual('ok', estados["pipe('createViews')"])
             self.assertEqual('método añadido', estados["pipe('miVista')"])
             self.assertFalse(any('sin pipe()' in aviso for aviso in report['avisos']))
+
+
+class CaseSensitivityTest(unittest.TestCase):
+    """PHP no distingue mayúsculas en métodos ni clases, pero sí en propiedades y pipes."""
+
+    def audit_plugin(self, tmp: str, body: str, extension: str | None = None) -> dict[str, str]:
+        """Audita el plugin y devuelve el estado de cada símbolo."""
+        core_repo = CHECKER.CoreRepo(path=build_core(Path(tmp)))
+        core_repo.load_tags()
+        plugin = build_plugin(Path(tmp), '2025', body)
+        if extension:
+            (plugin / 'Extension' / 'Controller').mkdir(parents=True)
+            (plugin / 'Extension' / 'Controller' / 'ListCliente.php').write_text(extension)
+        info = CHECKER.read_plugin_ini(plugin)
+        symbols, external = CHECKER.collect_symbols(plugin, include_tests=False)
+        target = core_repo.target_tag(info.min_version)
+        results = CHECKER.audit(symbols, core_repo, target, workers=2)
+        report = CHECKER.build_report(info, core_repo, target, results, external)
+        return {item['simbolo']: item['estado'] for item in report['symbols']}
+
+    def test_methods_ignore_case(self) -> None:
+        """->Run() se resuelve contra function run( y Tools::Env() contra function env(."""
+        with tempfile.TemporaryDirectory() as tmp:
+            estados = self.audit_plugin(tmp, (
+                '<?php\n'
+                'use FacturaScripts\\Core\\Tools;\n'
+                'class Init { public function init($c): void { $c->Run(); Tools::Env(); } }\n'
+            ))
+
+            self.assertEqual('ok', estados['->Run()'])
+            self.assertEqual('posterior', estados['Tools::Env()'])
+
+    def test_own_method_called_with_other_case_is_not_audited(self) -> None:
+        """Un método propio invocado con otras mayúsculas sigue siendo del plugin."""
+        with tempfile.TemporaryDirectory() as tmp:
+            estados = self.audit_plugin(tmp, (
+                '<?php\n'
+                'class Init { public function miMetodo() {} '
+                'public function init(): void { $this->MIMETODO(); } }\n'
+            ))
+
+            self.assertNotIn('->MIMETODO()', estados)
+
+    def test_properties_keep_case(self) -> None:
+        """->OrderOptions no es la propiedad $orderOptions del core."""
+        with tempfile.TemporaryDirectory() as tmp:
+            estados = self.audit_plugin(tmp, (
+                '<?php\n'
+                'class Init { public function init($c): void { $a = $c->orderOptions; $b = $c->OrderOptions; } }\n'
+            ))
+
+            self.assertEqual('ok', estados['->orderOptions'])
+            self.assertEqual('no encontrado', estados['->OrderOptions'])
+
+    def test_pipes_keep_case(self) -> None:
+        """pipe('createViews') no casa con un Closure llamado createviews."""
+        with tempfile.TemporaryDirectory() as tmp:
+            estados = self.audit_plugin(tmp, '<?php\nclass Init {}\n', (
+                '<?php\nclass ListCliente {\n'
+                '    public function createviews(): Closure { return function () {}; }\n'
+                '}\n'
+            ))
+
+            self.assertEqual('no encontrado', estados["pipe('createviews')"])
 
 
 class AuditTest(unittest.TestCase):
