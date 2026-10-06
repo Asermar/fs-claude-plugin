@@ -73,4 +73,5 @@ mcp-columnas-extension	d782bfb4a2bc	https://github.com/FacturaScripts/fs-claude-
 mcp-fechas-api	268dadca0136	https://github.com/FacturaScripts/fs-claude-plugin/pull/9	vigente	fs-mcp	e72da9fc68a2	las fechas que devuelve la API se parsean en vez de pasarlas a new Date(), que las interpretaba mal
 mcp-filtros-columnas	1adb42f10578	https://github.com/FacturaScripts/fs-claude-plugin/pull/10	vigente	fs-mcp	8308b679037f	filtros que apuntaban a columnas inexistentes, y una tool duplicada
 mcp-rango-fechas	8e52d52f3c7e	https://github.com/FacturaScripts/fs-claude-plugin/pull/11	vigente	fs-mcp	b1f274451071,e49abbbd3f9a	las tools get_* aceptan filtros de rango de fecha
+auditor-techo	19a0a408a4c9	https://github.com/FacturaScripts/fs-claude-plugin/pull/12	vigente	fs-dev	pendiente	check-min-version.py informa hasta qué versión funciona el plugin, y con --max-version incumple si usa algo retirado en esa versión o antes
 oko-inventario	-	-	permanente	fs-dev,fs-user,fs-mcp	-	este inventario y la línea de versión propia: son nuestros por definición y no tienen PR que abrir
