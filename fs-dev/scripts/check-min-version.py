@@ -11,7 +11,8 @@ La comprobación no usa el historial de commits sino la presencia del símbolo e
 cada etiqueta de versión (``git grep <patrón> <tag>``), de modo que los
 renombrados de archivos o los cambios de firma no falsean el resultado. Las
 versiones se comparan como decimales, igual que hace ``Kernel::version()``:
-2025.11 es anterior a 2025.2.
+2025.11 es anterior a 2025.2. Cada etiqueta vale lo que devuelve su propio
+``Kernel::version()``, que no siempre coincide con el nombre de la etiqueta.
 
 Uso:
     check-min-version.py <ruta_plugin> [--core <ruta_core>] [--json]
@@ -65,10 +66,19 @@ EXTENSION_NAMESPACES = ('Controller', 'Model', 'Lib', 'Table', 'Template', 'View
 CONFIDENCE_ORDER = {'alta': 3, 'media': 2, 'baja': 1}
 
 TAG_PATTERN = re.compile(r'^v?(\d{4}(?:\.\d+)?)$')
+KERNEL_VERSION_PATTERN = re.compile(
+    r'function\s+version\s*\(\s*\)\s*:\s*float\s*\{\s*return\s+(\d{4}(?:\.\d+)?)\s*;')
 USE_PATTERN = re.compile(r'^\s*use\s+(FacturaScripts\\[\w\\]+)(?:\s+as\s+(\w+))?\s*;', re.MULTILINE)
 EXTENDS_PATTERN = re.compile(r'\b(?:extends|implements)\s+([\w\\, ]+?)\s*[{\n]')
 STATIC_CALL_PATTERN = re.compile(r'(?<![\w$>])([A-Z]\w*)::\s*(\w+)\s*\(')
 METHOD_CALL_PATTERN = re.compile(r'->\s*(\w+)\s*\(')
+# Inferencia de tipos de un nivel: $x = new Clase(...), y parámetros o propiedades tipados.
+NEW_ASSIGN_PATTERN = re.compile(r'\$(?P<var>\w+)\s*=\s*new\s+(?P<type>\\?[A-Z][\w\\]*)')
+TYPED_DECLARATION_PATTERN = re.compile(
+    r'(?:[(,]|\b(?:public|protected|private|readonly|static))\s*'
+    r'\??(?P<type>\\?[A-Z][\w\\]*)\s+&?(?:\.\.\.)?\$(?P<var>\w+)')
+# Receptor de una llamada ->metodo(): $variable o $this->propiedad.
+RECEIVER_PATTERN = re.compile(r'\$(?P<this>this\s*->\s*)?(?P<name>\w+)\s*$')
 # En Twig los métodos se invocan con punto: fsc.contact.getTwoFactorQR().
 TWIG_CALL_PATTERN = re.compile(r'\.\s*(\w+)\s*\(')
 PROPERTY_PATTERN = re.compile(r'->\s*(\w+)\b(?!\s*\()')
@@ -179,13 +189,28 @@ class CoreRepo:
         for line in result.stdout.splitlines():
             match = TAG_PATTERN.match(line.strip())
             if match:
-                tags.append((float(match.group(1)), line.strip()))
+                tag = line.strip()
+                tags.append((self.kernel_version(tag) or float(match.group(1)), tag))
 
         if not tags:
             raise AuditError(f'El repositorio {self.path} no tiene etiquetas de versión de FacturaScripts.')
 
         # Las versiones de FacturaScripts son decimales: 2025.11 es anterior a 2025.2.
         self.tags = sorted(tags, key=lambda item: item[0])
+
+    def kernel_version(self, tag: str) -> float | None:
+        """Devuelve la versión que declara ``Kernel::version()`` en la etiqueta.
+
+        El core compara el ``min_version`` de un plugin con ``Kernel::version()``,
+        no con el nombre de la etiqueta, y no siempre coinciden: la etiqueta
+        v2025.7 devuelve 2025.63. Las etiquetas antiguas sin ``Core/Kernel.php``
+        devuelven ``None`` y se ordenan por su nombre.
+        """
+        result = self.git('show', f'{tag}:Core/Kernel.php')
+        if result.returncode != 0:
+            return None
+        match = KERNEL_VERSION_PATTERN.search(result.stdout)
+        return float(match.group(1)) if match else None
 
     def exists_in(self, tag: str, symbol: Symbol) -> bool:
         """Indica si alguno de los patrones del símbolo aparece en la etiqueta."""
@@ -488,6 +513,34 @@ def is_own_class(fqcn: str, plugin_dir: Path) -> bool:
     return (plugin_dir / Path(*parts[2:]).with_suffix('.php')).is_file()
 
 
+def variable_types(content: str, aliases: dict[str, str], plugin_dir: Path) -> dict[str, str]:
+    """Infiere la clase del core de las variables y propiedades de un archivo.
+
+    Solo mira un nivel: ``$x = new Clase(...)`` y las declaraciones tipadas de
+    parámetros y propiedades. Un nombre al que se le infieren dos clases distintas
+    en el mismo archivo se descarta, para no atribuir el método a la equivocada.
+    """
+    found: dict[str, set[str]] = {}
+    for pattern in (NEW_ASSIGN_PATTERN, TYPED_DECLARATION_PATTERN):
+        for match in pattern.finditer(content):
+            name = match.group('type').lstrip('\\')
+            if name.startswith('FacturaScripts\\'):
+                fqcn = None if is_own_class(name, plugin_dir) else name
+            else:
+                fqcn = aliases.get(name)
+            if fqcn and class_path(fqcn):
+                found.setdefault(match.group('var'), set()).add(fqcn)
+    return {var: next(iter(types)) for var, types in found.items() if len(types) == 1}
+
+
+def receiver_type(content: str, position: int, types: dict[str, str]) -> str | None:
+    """Devuelve la clase del receptor de la llamada que empieza en ``position``."""
+    match = RECEIVER_PATTERN.search(content[max(0, position - 200):position])
+    if match is None or (match.group('this') is None and match.group('name') == 'this'):
+        return None
+    return types.get(match.group('name'))
+
+
 def collect_symbols(plugin_dir: Path, include_tests: bool) -> tuple[list[Symbol], list[str]]:
     """Extrae del plugin los símbolos del core y las dependencias externas."""
     files = php_files(plugin_dir, include_tests)
@@ -597,9 +650,23 @@ def collect_symbols(plugin_dir: Path, include_tests: bool) -> tuple[list[Symbol]
                     origin=relative,
                 ))
 
-        # 5. Métodos de instancia que no define el plugin.
-        for method in METHOD_CALL_PATTERN.findall(content):
+        # 5. Métodos de instancia que no define el plugin. Si se conoce la clase del
+        # receptor, el método se busca en el archivo de esa clase.
+        types = variable_types(content, aliases, plugin_dir)
+        for match in METHOD_CALL_PATTERN.finditer(content):
+            method = match.group(1)
             if method.lower() in IGNORED_METHODS or method.lower() in own_methods_lower:
+                continue
+            fqcn = receiver_type(content, match.start(), types)
+            if fqcn:
+                short_name = fqcn.split('\\')[-1]
+                add(Symbol(
+                    kind='método',
+                    label=f'{short_name}->{method}()',
+                    patterns=(f'function {method}(',),
+                    pathspecs=(class_path(fqcn),),
+                    origin=relative,
+                ))
                 continue
             add(Symbol(
                 kind='método',
@@ -648,7 +715,10 @@ def audit_symbol(symbol: Symbol, core: CoreRepo, target: tuple[float, str],
                             since_version=versions.get(since or ''))
 
     # Puede estar declarado en una clase padre: repite la búsqueda en todo Core/.
-    if symbol.pathspecs != ('Core/',):
+    # Un método de instancia que su clase sí declara en la última versión no se
+    # ensancha: otra clase con un método homónimo daría una fecha que no es la suya.
+    if symbol.pathspecs != ('Core/',) and not (
+            symbol.kind == 'método' and core.exists_in(core.tags[-1][1], symbol)):
         wider = symbol.widened()
         if core.exists_in(target_tag, wider):
             since = core.first_tag_with(wider)
