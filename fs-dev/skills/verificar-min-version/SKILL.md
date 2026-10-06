@@ -35,7 +35,7 @@ La auditoría tiene dos partes independientes: la **compatibilidad** con el core
 | --- | --- |
 | `--json` | Informe completo para procesar símbolo a símbolo |
 | `--include-tests` | Analiza también `Test/`, excluido por defecto |
-| `--min-confidence alta` | Deja solo clases, llamadas estáticas y pipes |
+| `--min-confidence alta` | Deja solo clases, llamadas estáticas, métodos con receptor tipado y pipes |
 | `--plugins-dir` | Directorio `Plugins/` para atribuir los símbolos de otros plugins |
 | `--workers N` | Ajusta las consultas simultáneas a git |
 
@@ -87,7 +87,7 @@ extensión y nada del plugin invoca el método: esa extensión seguramente nunca
 
 ## Límites del análisis
 
-La auditoría de compatibilidad es estática y solo audita PHP: no resuelve tipos, no comprueba las funciones ni los bloques de plantilla que usan los Twig, ni los XMLView, ni el JavaScript, y no audita los plugins declarados en `require`. Las plantillas solo se leen para saber qué métodos invoca el plugin.
+La auditoría de compatibilidad es estática y solo audita PHP: infiere el tipo del receptor solo a un nivel (`new Clase()`, parámetros y propiedades tipados), no comprueba las funciones ni los bloques de plantilla que usan los Twig, ni los XMLView, ni el JavaScript, y no audita los plugins declarados en `require`. Las plantillas solo se leen para saber qué métodos invoca el plugin.
 
 Por eso un `min_version` más alto que el calculado puede estar justificado por un cambio del core que esta herramienta no ve. Declara siempre estas limitaciones en la conclusión y marca como dudosos los símbolos que no hayas verificado a mano.
 
