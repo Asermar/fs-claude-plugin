@@ -11,11 +11,17 @@ La comprobación no usa el historial de commits sino la presencia del símbolo e
 cada etiqueta de versión (``git grep <patrón> <tag>``), de modo que los
 renombrados de archivos o los cambios de firma no falsean el resultado. Las
 versiones se comparan como decimales, igual que hace ``Kernel::version()``:
-2025.11 es anterior a 2025.2.
+2025.11 es anterior a 2025.2. Cada etiqueta vale lo que devuelve su propio
+``Kernel::version()``, que no siempre coincide con el nombre de la etiqueta.
+
+Además informa hasta qué versión funciona el plugin: la última en la que
+existen todos los símbolos que usa. Con ``--max-version`` el resultado pasa a
+ser incumple si alguno se retiró en esa versión o antes.
 
 Uso:
     check-min-version.py <ruta_plugin> [--core <ruta_core>] [--json]
                          [--include-tests] [--min-confidence alta|media|baja]
+                         [--max-version <versión>]
 
 El script solo informa: nunca modifica el ``facturascripts.ini`` del plugin.
 """
@@ -44,6 +50,8 @@ IGNORED_MEMBERS = frozenset({
     'xpath', 'children', 'attributes', 'asXML', 'addChild', 'addAttribute',
     'prepare', 'execute', 'fetch', 'fetchAll', 'bindValue',
 })
+# PHP no distingue mayúsculas en los nombres de método: se comparan en minúsculas.
+IGNORED_METHODS = frozenset(name.lower() for name in IGNORED_MEMBERS)
 
 # Clases que no pertenecen al core de FacturaScripts.
 IGNORED_CLASSES = frozenset({
@@ -63,10 +71,19 @@ EXTENSION_NAMESPACES = ('Controller', 'Model', 'Lib', 'Table', 'Template', 'View
 CONFIDENCE_ORDER = {'alta': 3, 'media': 2, 'baja': 1}
 
 TAG_PATTERN = re.compile(r'^v?(\d{4}(?:\.\d+)?)$')
+KERNEL_VERSION_PATTERN = re.compile(
+    r'function\s+version\s*\(\s*\)\s*:\s*float\s*\{\s*return\s+(\d{4}(?:\.\d+)?)\s*;')
 USE_PATTERN = re.compile(r'^\s*use\s+(FacturaScripts\\[\w\\]+)(?:\s+as\s+(\w+))?\s*;', re.MULTILINE)
 EXTENDS_PATTERN = re.compile(r'\b(?:extends|implements)\s+([\w\\, ]+?)\s*[{\n]')
 STATIC_CALL_PATTERN = re.compile(r'(?<![\w$>])([A-Z]\w*)::\s*(\w+)\s*\(')
 METHOD_CALL_PATTERN = re.compile(r'->\s*(\w+)\s*\(')
+# Inferencia de tipos de un nivel: $x = new Clase(...), y parámetros o propiedades tipados.
+NEW_ASSIGN_PATTERN = re.compile(r'\$(?P<var>\w+)\s*=\s*new\s+(?P<type>\\?[A-Z][\w\\]*)')
+TYPED_DECLARATION_PATTERN = re.compile(
+    r'(?:[(,]|\b(?:public|protected|private|readonly|static))\s*'
+    r'\??(?P<type>\\?[A-Z][\w\\]*)\s+&?(?:\.\.\.)?\$(?P<var>\w+)')
+# Receptor de una llamada ->metodo(): $variable o $this->propiedad.
+RECEIVER_PATTERN = re.compile(r'\$(?P<this>this\s*->\s*)?(?P<name>\w+)\s*$')
 # En Twig los métodos se invocan con punto: fsc.contact.getTwoFactorQR().
 TWIG_CALL_PATTERN = re.compile(r'\.\s*(\w+)\s*\(')
 PROPERTY_PATTERN = re.compile(r'->\s*(\w+)\b(?!\s*\()')
@@ -94,6 +111,15 @@ class Symbol:
     origin: str
     confidence: str = 'alta'
     self_called: bool = False
+
+    @property
+    def case_insensitive(self) -> bool:
+        """Indica si el símbolo se busca sin distinguir mayúsculas.
+
+        PHP no las distingue en clases ni métodos, pero sí en las propiedades y en
+        el nombre de un ``pipe()``, que el core usa como clave de un array.
+        """
+        return self.kind not in ('propiedad', 'pipe')
 
     @property
     def key(self) -> tuple:
@@ -168,7 +194,8 @@ class CoreRepo:
         for line in result.stdout.splitlines():
             match = TAG_PATTERN.match(line.strip())
             if match:
-                tags.append((float(match.group(1)), line.strip()))
+                tag = line.strip()
+                tags.append((self.kernel_version(tag) or float(match.group(1)), tag))
 
         if not tags:
             raise AuditError(f'El repositorio {self.path} no tiene etiquetas de versión de FacturaScripts.')
@@ -176,14 +203,28 @@ class CoreRepo:
         # Las versiones de FacturaScripts son decimales: 2025.11 es anterior a 2025.2.
         self.tags = sorted(tags, key=lambda item: item[0])
 
+    def kernel_version(self, tag: str) -> float | None:
+        """Devuelve la versión que declara ``Kernel::version()`` en la etiqueta.
+
+        El core compara el ``min_version`` de un plugin con ``Kernel::version()``,
+        no con el nombre de la etiqueta, y no siempre coinciden: la etiqueta
+        v2025.7 devuelve 2025.63. Las etiquetas antiguas sin ``Core/Kernel.php``
+        devuelven ``None`` y se ordenan por su nombre.
+        """
+        result = self.git('show', f'{tag}:Core/Kernel.php')
+        if result.returncode != 0:
+            return None
+        match = KERNEL_VERSION_PATTERN.search(result.stdout)
+        return float(match.group(1)) if match else None
+
     def exists_in(self, tag: str, symbol: Symbol) -> bool:
         """Indica si alguno de los patrones del símbolo aparece en la etiqueta."""
-        cache_key = (tag, symbol.patterns, symbol.pathspecs)
+        cache_key = (tag, symbol.patterns, symbol.pathspecs, symbol.case_insensitive)
         with self._lock:
             if cache_key in self._cache:
                 return self._cache[cache_key]
 
-        args = ['grep', '-q', '-F']
+        args = ['grep', '-q', '-F'] + (['-i'] if symbol.case_insensitive else [])
         for pattern in symbol.patterns:
             args += ['-e', pattern]
         args += [tag, '--', *symbol.pathspecs]
@@ -477,10 +518,39 @@ def is_own_class(fqcn: str, plugin_dir: Path) -> bool:
     return (plugin_dir / Path(*parts[2:]).with_suffix('.php')).is_file()
 
 
+def variable_types(content: str, aliases: dict[str, str], plugin_dir: Path) -> dict[str, str]:
+    """Infiere la clase del core de las variables y propiedades de un archivo.
+
+    Solo mira un nivel: ``$x = new Clase(...)`` y las declaraciones tipadas de
+    parámetros y propiedades. Un nombre al que se le infieren dos clases distintas
+    en el mismo archivo se descarta, para no atribuir el método a la equivocada.
+    """
+    found: dict[str, set[str]] = {}
+    for pattern in (NEW_ASSIGN_PATTERN, TYPED_DECLARATION_PATTERN):
+        for match in pattern.finditer(content):
+            name = match.group('type').lstrip('\\')
+            if name.startswith('FacturaScripts\\'):
+                fqcn = None if is_own_class(name, plugin_dir) else name
+            else:
+                fqcn = aliases.get(name)
+            if fqcn and class_path(fqcn):
+                found.setdefault(match.group('var'), set()).add(fqcn)
+    return {var: next(iter(types)) for var, types in found.items() if len(types) == 1}
+
+
+def receiver_type(content: str, position: int, types: dict[str, str]) -> str | None:
+    """Devuelve la clase del receptor de la llamada que empieza en ``position``."""
+    match = RECEIVER_PATTERN.search(content[max(0, position - 200):position])
+    if match is None or (match.group('this') is None and match.group('name') == 'this'):
+        return None
+    return types.get(match.group('name'))
+
+
 def collect_symbols(plugin_dir: Path, include_tests: bool) -> tuple[list[Symbol], list[str]]:
     """Extrae del plugin los símbolos del core y las dependencias externas."""
     files = php_files(plugin_dir, include_tests)
     own_methods, own_properties = plugin_members(files)
+    own_methods_lower = {name.lower() for name in own_methods}
     called_methods = plugin_calls(plugin_dir)
     own_columns = plugin_table_columns(plugin_dir)
     symbols: dict[tuple, Symbol] = {}
@@ -537,7 +607,7 @@ def collect_symbols(plugin_dir: Path, include_tests: bool) -> tuple[list[Symbol]
 
         # 3. Llamadas estáticas a clases del core.
         for class_name, method in STATIC_CALL_PATTERN.findall(content):
-            if class_name in IGNORED_CLASSES or method in IGNORED_MEMBERS:
+            if class_name in IGNORED_CLASSES or method.lower() in IGNORED_METHODS:
                 continue
             fqcn = aliases.get(class_name)
             if fqcn is None:
@@ -585,9 +655,23 @@ def collect_symbols(plugin_dir: Path, include_tests: bool) -> tuple[list[Symbol]
                     origin=relative,
                 ))
 
-        # 5. Métodos de instancia que no define el plugin.
-        for method in METHOD_CALL_PATTERN.findall(content):
-            if method in IGNORED_MEMBERS or method in own_methods:
+        # 5. Métodos de instancia que no define el plugin. Si se conoce la clase del
+        # receptor, el método se busca en el archivo de esa clase.
+        types = variable_types(content, aliases, plugin_dir)
+        for match in METHOD_CALL_PATTERN.finditer(content):
+            method = match.group(1)
+            if method.lower() in IGNORED_METHODS or method.lower() in own_methods_lower:
+                continue
+            fqcn = receiver_type(content, match.start(), types)
+            if fqcn:
+                short_name = fqcn.split('\\')[-1]
+                add(Symbol(
+                    kind='método',
+                    label=f'{short_name}->{method}()',
+                    patterns=(f'function {method}(',),
+                    pathspecs=(class_path(fqcn),),
+                    origin=relative,
+                ))
                 continue
             add(Symbol(
                 kind='método',
@@ -636,7 +720,10 @@ def audit_symbol(symbol: Symbol, core: CoreRepo, target: tuple[float, str],
                             since_version=versions.get(since or ''))
 
     # Puede estar declarado en una clase padre: repite la búsqueda en todo Core/.
-    if symbol.pathspecs != ('Core/',):
+    # Un método de instancia que su clase sí declara en la última versión no se
+    # ensancha: otra clase con un método homónimo daría una fecha que no es la suya.
+    if symbol.pathspecs != ('Core/',) and not (
+            symbol.kind == 'método' and core.exists_in(core.tags[-1][1], symbol)):
         wider = symbol.widened()
         if core.exists_in(target_tag, wider):
             since = core.first_tag_with(wider)
@@ -720,11 +807,34 @@ def build_warnings(plugin: PluginInfo, core: CoreRepo, results: list[SymbolResul
     return warnings
 
 
+def works_until(core: CoreRepo, results: list[SymbolResult]) -> str:
+    """Devuelve la última etiqueta en la que existen todos los símbolos del plugin."""
+    versions = {tag: version for version, tag in core.tags}
+    removed = [item.removed_after for item in results
+               if item.status == 'eliminado' and item.removed_after]
+    return min(removed, key=lambda tag: versions.get(tag, 0), default=core.tags[-1][1])
+
+
+def retired_by(core: CoreRepo, results: list[SymbolResult],
+               max_target: tuple[float, str]) -> list[SymbolResult]:
+    """Devuelve los símbolos que ya no existen en la versión máxima indicada."""
+    versions = {tag: version for version, tag in core.tags}
+    return [item for item in results
+            if item.status == 'eliminado' and item.removed_after
+            and versions.get(item.removed_after, 0) < max_target[0]]
+
+
 def build_report(plugin: PluginInfo, core: CoreRepo, target: tuple[float, str],
-                 results: list[SymbolResult], external: list[str]) -> dict:
-    """Construye la estructura de datos del informe final."""
+                 results: list[SymbolResult], external: list[str],
+                 max_target: tuple[float, str] | None = None) -> dict:
+    """Construye la estructura de datos del informe final.
+
+    Sin ``max_target``, los símbolos eliminados se informan pero no cambian el
+    resultado. Con él, cualquiera retirado en esa versión o antes lo hace incumplir.
+    """
     later = [item for item in results if item.status == 'posterior']
     required = max([item.since_version or 0 for item in later] + [plugin.min_version, 2025.0])
+    retired = retired_by(core, results, max_target) if max_target else []
 
     return {
         'plugin': {
@@ -734,12 +844,15 @@ def build_report(plugin: PluginInfo, core: CoreRepo, target: tuple[float, str],
             'min_version_calculado': required,
             'min_php': plugin.min_php,
             'require': list(plugin.require),
-            'cumple': not later and plugin.min_version >= 2025,
+            'cumple': not later and plugin.min_version >= 2025 and not retired,
+            'funciona_hasta': works_until(core, results),
+            'retirados': [item.symbol.label for item in retired],
             'path': str(plugin.path),
         },
         'core': {
             'path': str(core.path),
             'version_objetivo': target[1],
+            'version_maxima': max_target[1] if max_target else None,
             'ultima_version': core.tags[-1][1],
             'total_versiones': len(core.tags),
         },
@@ -770,18 +883,31 @@ def print_report(report: dict, results: list[SymbolResult]) -> None:
     print(f"min_version declarado: {plugin['min_version_declarado']:g}")
     print(f"Core: {core['path']} ({core['total_versiones']} versiones, última {core['ultima_version']})")
     print(f"Versión comprobada: {core['version_objetivo']}")
+    if core['version_maxima']:
+        print(f"Versión máxima comprobada: {core['version_maxima']}")
+    print(f"Funciona hasta: {plugin['funciona_hasta']}")
     print()
 
     later = [item for item in results if item.status == 'posterior']
+    retired = [item for item in results if item.symbol.label in plugin['retirados']]
     if plugin['cumple']:
         print(f"RESULTADO: CUMPLE. Todos los símbolos localizados existen en {core['version_objetivo']}.")
-    else:
+    elif later or plugin['min_version_declarado'] < 2025:
         print(f"RESULTADO: INCUMPLE. min_version debería ser {plugin['min_version_calculado']:g}")
+    else:
+        print(f"RESULTADO: INCUMPLE. Usa símbolos que ya no existen en {core['version_maxima']}.")
+    if not plugin['cumple']:
         if later:
             print()
             print('Símbolos que no existen en la versión declarada:')
             for item in sorted(later, key=lambda entry: -(entry.since_version or 0)):
                 print(f"  - {item.symbol.label} ({item.symbol.kind}) añadido en {item.since}"
+                      f"  [{item.symbol.origin}, confianza {item.symbol.confidence}]")
+        if retired:
+            print()
+            print(f"Símbolos retirados en {core['version_maxima']} o antes:")
+            for item in retired:
+                print(f"  - {item.symbol.label} ({item.symbol.kind}) presente hasta {item.removed_after}"
                       f"  [{item.symbol.origin}, confianza {item.symbol.confidence}]")
     print()
 
@@ -841,6 +967,9 @@ def main(argv: list[str] | None = None) -> int:
                         help='Descarta los símbolos con confianza inferior a la indicada')
     parser.add_argument('--plugins-dir',
                         help='Directorio Plugins/ donde buscar los símbolos que aporten otros plugins')
+    parser.add_argument('--max-version', type=float,
+                        help='Versión del core que el plugin debe soportar: incumple si usa algo retirado '
+                             'en ella o antes')
     parser.add_argument('--workers', type=int, default=8,
                         help='Número de consultas simultáneas a git')
     args = parser.parse_args(argv)
@@ -863,7 +992,8 @@ def main(argv: list[str] | None = None) -> int:
     results = audit(symbols, core, target, args.workers)
     resolve_providers(results, find_plugins_dir(args.plugins_dir, plugin_dir), plugin_dir.name,
                       [core.path / 'vendor', plugin_dir / 'vendor'], plugin.require, args.workers)
-    report = build_report(plugin, core, target, results, external)
+    max_target = core.target_tag(args.max_version) if args.max_version else None
+    report = build_report(plugin, core, target, results, external, max_target)
 
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
