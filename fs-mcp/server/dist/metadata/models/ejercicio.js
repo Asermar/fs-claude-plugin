@@ -46,7 +46,7 @@ export const ejercicioMetadata = {
             "isPrimaryKey": false,
             "isReadonly": false,
             "isRequired": true,
-            "label": "Fecha de fin",
+            "label": "Fecha fin",
             "description": "Fecha de fin del ejercicio (último día contabilizable).",
             "widget": "date"
         },
@@ -58,7 +58,7 @@ export const ejercicioMetadata = {
             "isPrimaryKey": false,
             "isReadonly": false,
             "isRequired": true,
-            "label": "Fecha de inicio",
+            "label": "Fecha inicio",
             "description": "Fecha de inicio del ejercicio (primer día contabilizable).",
             "widget": "date"
         },
@@ -207,8 +207,8 @@ export const ejercicioMetadata = {
         }
     ],
     "generatedFrom": {
-        "generatedAt": "2026-04-25T12:48:58.060Z",
-        "facturascriptsCommit": "262e79208"
+        "generatedAt": "2026-10-06T17:52:38.200Z",
+        "facturascriptsCommit": "93a6a74ac"
     }
 };
 export default ejercicioMetadata;

@@ -19,7 +19,7 @@ export const apiKeyMetadata: ModelMetadata = {
             "isPrimaryKey": false,
             "isReadonly": false,
             "isRequired": true,
-            "label": "API key",
+            "label": "Clave API",
             "maxLength": 99,
             "description": "Token de la clave de API. Se envía en el header `Token` de las peticiones HTTP para autenticarse.",
             "widget": "password"
@@ -87,6 +87,19 @@ export const apiKeyMetadata: ModelMetadata = {
             "widget": "datetime"
         },
         {
+            "name": "lastip",
+            "sqlType": "character varying(45)",
+            "tsType": "string",
+            "nullable": true,
+            "isPrimaryKey": false,
+            "isReadonly": true,
+            "isRequired": false,
+            "label": "Última IP",
+            "maxLength": 45,
+            "description": "Dirección IP desde la que se usó la API key por última vez.",
+            "widget": "text"
+        },
+        {
             "name": "id",
             "sqlType": "serial",
             "tsType": "number",
@@ -106,7 +119,7 @@ export const apiKeyMetadata: ModelMetadata = {
             "isPrimaryKey": false,
             "isReadonly": true,
             "isRequired": true,
-            "label": "Usuario",
+            "label": "Creado por",
             "maxLength": 50,
             "description": "Usuario al que pertenece la API key.",
             "widget": "select",
@@ -135,8 +148,8 @@ export const apiKeyMetadata: ModelMetadata = {
         }
     ],
     "generatedFrom": {
-        "generatedAt": "2026-04-25T12:48:58.060Z",
-        "facturascriptsCommit": "262e79208"
+        "generatedAt": "2026-10-06T17:52:38.200Z",
+        "facturascriptsCommit": "93a6a74ac"
     }
 };
 

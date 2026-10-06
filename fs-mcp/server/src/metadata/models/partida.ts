@@ -19,7 +19,7 @@ export const partidaMetadata: ModelMetadata = {
             "isPrimaryKey": false,
             "isReadonly": false,
             "isRequired": false,
-            "label": "Base Imponible",
+            "label": "Base imponible",
             "default": 0,
             "description": "Base imponible asociada a la partida cuando se trata de IVA.",
             "widget": "money"
@@ -319,8 +319,8 @@ export const partidaMetadata: ModelMetadata = {
         }
     ],
     "generatedFrom": {
-        "generatedAt": "2026-04-25T12:48:58.060Z",
-        "facturascriptsCommit": "262e79208"
+        "generatedAt": "2026-10-06T17:52:38.200Z",
+        "facturascriptsCommit": "93a6a74ac"
     }
 };
 
