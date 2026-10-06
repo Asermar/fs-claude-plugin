@@ -37,6 +37,7 @@ La auditoría tiene dos partes independientes: la **compatibilidad** con el core
 | `--include-tests` | Analiza también `Test/`, excluido por defecto |
 | `--min-confidence alta` | Deja solo clases, llamadas estáticas y pipes |
 | `--plugins-dir` | Directorio `Plugins/` para atribuir los símbolos de otros plugins |
+| `--max-version X` | Incumple si el plugin usa algo retirado en la versión `X` del core o antes |
 | `--workers N` | Ajusta las consultas simultáneas a git |
 
 Código de salida: `0` cumple, `1` incumple, `2` error de configuración.
@@ -80,7 +81,8 @@ git -C <core> log --reverse --oneline -S'function <metodo>(' -- Core/<ruta>
 ## Estados del informe de compatibilidad
 
 `ok` y `método añadido` no requieren acción. `posterior` obliga a subir el `min_version`.
-`eliminado` avisa de que el plugin se romperá al actualizar el core. `aportado por plugin`
+`eliminado` avisa de que el plugin se romperá al actualizar el core; el informe dice
+hasta qué versión funciona, y solo cuenta en el resultado con `--max-version`. `aportado por plugin`
 y `aportado por vendor` indican que el símbolo no es del core. `no encontrado` exige
 revisión manual, y si es un `pipe('X')` significa que el core no declara ese punto de
 extensión y nada del plugin invoca el método: esa extensión seguramente nunca se ejecuta.
