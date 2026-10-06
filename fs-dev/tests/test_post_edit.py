@@ -95,6 +95,65 @@ class Example
         self.assertIn(f'Copyright (C) 2020-{POST_EDIT.datetime.now().year}', content)
         self.assertLess(content.index('function alpha'), content.index('function zebra'))
 
+    def test_updates_copyright_in_plugin_file_without_namespace(self) -> None:
+        """Un XML dentro de un plugin (con facturascripts.ini) debe actualizar su copyright."""
+        with tempfile.TemporaryDirectory() as directory:
+            plugin_dir = Path(directory) / 'Demo'
+            (plugin_dir / 'XMLView').mkdir(parents=True)
+            (plugin_dir / 'facturascripts.ini').write_text("name = 'Demo'\n", encoding='utf-8')
+            file_path = plugin_dir / 'XMLView' / 'EditDemo.xml'
+            file_path.write_text('<!-- Copyright (C) 2020 Example -->\n<view/>\n', encoding='utf-8')
+
+            result = POST_EDIT.process_file(POST_EDIT.ModifiedFile(file_path), SCRIPT_PATH.parent)
+            content = file_path.read_text(encoding='utf-8')
+
+        self.assertEqual(0, result)
+        self.assertIn(f'Copyright (C) 2020-{POST_EDIT.datetime.now().year}', content)
+
+    def test_updates_copyright_in_core_installation_file(self) -> None:
+        """Una plantilla Twig dentro de una instalación del core debe actualizar su copyright."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ('Core', 'Plugins', 'Dinamic'):
+                (root / name).mkdir()
+            (root / 'Core' / 'View').mkdir()
+            file_path = root / 'Core' / 'View' / 'Demo.html.twig'
+            file_path.write_text('{# Copyright (C) 2020 Example #}\n', encoding='utf-8')
+
+            result = POST_EDIT.process_file(POST_EDIT.ModifiedFile(file_path), SCRIPT_PATH.parent)
+            content = file_path.read_text(encoding='utf-8')
+
+        self.assertEqual(0, result)
+        self.assertIn(f'Copyright (C) 2020-{POST_EDIT.datetime.now().year}', content)
+
+    def test_ignores_files_outside_facturascripts(self) -> None:
+        """Un PHP de otro proyecto (por ejemplo Laravel) no debe modificarse."""
+        original = """<?php
+/** Copyright (C) 2020 Third Party */
+namespace App\\Models;
+
+class Example
+{
+    public function zebra(): void
+    {
+    }
+
+    public function alpha(): void
+    {
+    }
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            file_path = Path(directory) / 'app' / 'Models' / 'Example.php'
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text(original, encoding='utf-8')
+
+            result = POST_EDIT.process_file(POST_EDIT.ModifiedFile(file_path), SCRIPT_PATH.parent)
+            content = file_path.read_text(encoding='utf-8')
+
+        self.assertEqual(0, result)
+        self.assertEqual(original, content)
+
 
 if __name__ == '__main__':
     unittest.main()

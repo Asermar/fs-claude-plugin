@@ -17,6 +17,13 @@ En modo archivo nuevo (--new):
 - Reemplaza cualquier copyright con solo el año actual
   Copyright (C) 2023 Carlos → Copyright (C) 2026 Carlos
 
+Solo actúa sobre archivos que pertenecen al core o a un plugin de FacturaScripts:
+- Archivos con 'namespace FacturaScripts\\'.
+- Archivos situados dentro de un plugin (carpeta con facturascripts.ini) o de una
+  instalación del core (composer.json de facturascripts/facturascripts o carpetas
+  Core, Plugins y Dinamic).
+El resto de archivos, como los de proyectos Laravel o módulos de terceros, se ignoran.
+
 Uso: update-copyright.py <file_path> <current_year> [--new]
 """
 import json
@@ -35,6 +42,36 @@ def _is_copyright_update_enabled() -> bool:
         return bool(config.get('settings', {}).get('updateCopyright', True))
     except Exception:
         return True
+
+
+def _is_facturascripts_root(directory: Path) -> bool:
+    """Indica si el directorio es la raíz de una instalación del core de FacturaScripts."""
+    composer = directory / 'composer.json'
+    if composer.is_file():
+        try:
+            data = json.loads(composer.read_text(encoding='utf-8'))
+            if data.get('name') == 'facturascripts/facturascripts':
+                return True
+        except Exception:
+            pass
+
+    return all((directory / name).is_dir() for name in ('Core', 'Plugins', 'Dinamic'))
+
+
+def is_facturascripts_file(file_path: Path, content: str) -> bool:
+    """Indica si el archivo pertenece al core o a un plugin de FacturaScripts.
+
+    Se considera de FacturaScripts si declara un namespace FacturaScripts\\ o si
+    algún directorio ascendente es la raíz de un plugin (contiene facturascripts.ini)
+    o de una instalación del core.
+    """
+    if 'namespace FacturaScripts\\' in content:
+        return True
+
+    for directory in file_path.resolve().parents:
+        if (directory / 'facturascripts.ini').is_file() or _is_facturascripts_root(directory):
+            return True
+    return False
 
 
 def update_copyright_year(content: str, current_year: int, is_new_file: bool = False) -> str:
@@ -82,6 +119,7 @@ def update_copyright_year(content: str, current_year: int, is_new_file: bool = F
 
 
 def main() -> None:
+    """Lee los argumentos, comprueba que el archivo es de FacturaScripts y actualiza su copyright."""
     if not _is_copyright_update_enabled():
         sys.exit(0)
     if len(sys.argv) < 3 or len(sys.argv) > 4:
@@ -103,6 +141,9 @@ def main() -> None:
     except (OSError, IOError) as e:
         print(f"Error leyendo {file_path}: {e}", file=sys.stderr)
         sys.exit(1)
+
+    if not is_facturascripts_file(Path(file_path), original):
+        sys.exit(0)
 
     updated = update_copyright_year(original, current_year, is_new_file)
 
