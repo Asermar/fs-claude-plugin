@@ -34,9 +34,9 @@ export const systemTools: Tool[] = [
           type: 'string',
           description: 'Filtrar por nivel de registro (INFO, WARNING, ERROR, etc.)',
         },
-        fecha: {
+        time: {
           type: 'string',
-          description: 'Filtrar por fecha (formato YYYY-MM-DD)',
+          description: 'Filtrar por fecha y hora del registro (formato YYYY-MM-DD)',
         },
       },
       required: [],
@@ -361,7 +361,7 @@ export async function handleSystemTool(
         const params: Record<string, unknown> = { offset, limit, ...dateRangeFilters('get_logmessages', args) };
         if (args.channel) params.channel = args.channel;
         if (args.level) params.level = args.level;
-        if (args.fecha) params.fecha = args.fecha;
+        if (args.time) params.time = args.time;
         result = await fsClient.get('/logmessages', params, connection);
         break;
       }

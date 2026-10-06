@@ -26,17 +26,17 @@ export const communicationTools: Tool[] = [
           type: 'number',
           description: 'Límite de paginación (por defecto: 100)',
         },
-        destinatario: {
+        addressee: {
           type: 'string',
           description: 'Filtrar por correo del destinatario',
         },
-        asunto: {
+        subject: {
           type: 'string',
           description: 'Filtrar por asunto',
         },
-        fecha: {
+        date: {
           type: 'string',
-          description: 'Filtrar por fecha (formato YYYY-MM-DD)',
+          description: 'Filtrar por fecha y hora de envío (formato YYYY-MM-DD)',
         },
       },
       required: [],
@@ -190,9 +190,9 @@ export async function handleCommunicationTool(
     switch (name) {
       case 'get_emailsentes': {
         const params: Record<string, unknown> = { offset, limit, ...dateRangeFilters('get_emailsentes', args) };
-        if (args.destinatario) params.destinatario = args.destinatario;
-        if (args.asunto) params.asunto = args.asunto;
-        if (args.fecha) params.fecha = args.fecha;
+        if (args.addressee) params.addressee = args.addressee;
+        if (args.subject) params.subject = args.subject;
+        if (args.date) params.date = args.date;
         result = await fsClient.get('/emailsentes', params, connection);
         break;
       }
