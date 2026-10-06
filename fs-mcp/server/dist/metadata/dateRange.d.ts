@@ -39,11 +39,11 @@ export declare function dateRangeFilters(toolName: string, args: Record<string, 
  * parámetro que ya exista (algún módulo podría declararlo a mano).
  *
  * `soloEstas` acota a qué tools se les inyecta, y es IMPRESCINDIBLE pasarlo con
- * las tools del core: los módulos privados (`plugins-mcp-private`) también
- * registran sus modelos en el registry, así que sus `get_*` resolverían columnas
- * de fecha, pero sus handlers son genéricos (`makeCrudModule`) y solo leen el
- * parámetro `filter`, de modo que descartarían `<columna>_gte` sin avisar. Esos
- * ya ofrecen rangos por su propio DSL: `filter: "fecha_gte:2024-01-01,..."`.
+ * las tools del core: los módulos locales (`settings.localModulesPath`) también
+ * pueden registrar sus modelos en el registry, así que sus `get_*` resolverían
+ * columnas de fecha, pero sus handlers no tienen por qué reenviar `<columna>_gte`
+ * y lo descartarían sin avisar. Esos pueden ofrecer rangos por el parámetro
+ * `filter`: `filter: "fecha_gte:2024-01-01,..."`.
  */
 export declare function addDateRangeParams(tools: Map<string, Tool>, soloEstas?: ReadonlySet<string>): number;
 //# sourceMappingURL=dateRange.d.ts.map

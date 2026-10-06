@@ -325,8 +325,9 @@ export const purchasingTools = [
                 },
             },
             // Sin campos obligatorios: es el esquema que se venía publicando (lo ganaba la
-            // definición duplicada, que se registraba después). En remoto el servidor
-            // resuelve la conexión del usuario, así que no debe exigirse al cliente.
+            // definición duplicada, que se registraba después). Si no se pasa `connection`,
+            // el cliente usa la conexión por defecto (`defaultConnectionKey` en fs/client.ts),
+            // así que no hace falta exigirla.
             required: [],
         },
     },
