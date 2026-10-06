@@ -22,7 +22,7 @@ El core lee el `facturascripts.ini` en `Core/Internal/Plugin.php` y marca el plu
 - `min_version < 2025` — desde 2025 el core rechaza cualquier plugin que declare menos de 2025.
 - `version_compare(PHP_VERSION, min_php, '<')` — la versión de PHP es insuficiente.
 
-`min_version` se lee con `floatval()`, así que las versiones se comparan **como decimales**: `2025.11` (2025.11) es **anterior** a `2025.2` (2025.2). Nunca ordenes versiones de FacturaScripts como si fueran semver ni con `sort -V`.
+`min_version` se lee con `floatval()`, así que las versiones se comparan **como decimales**: `2025.11` (2025.11) es **anterior** a `2025.2` (2025.2). Nunca ordenes versiones de FacturaScripts como si fueran semver ni con `sort -V`. Y una etiqueta del core vale lo que devuelve su `Kernel::version()`, no su nombre: `v2025.7` devuelve 2025.63, así que un plugin con `min_version = 2025.7` no se instala en ella.
 
 Consecuencias prácticas:
 
@@ -42,8 +42,9 @@ Opciones relevantes:
 - `--core` — ruta del clon git del core. Si no se indica, el script busca `FS_CORE_PATH`, la clave `settings.corePath` de `~/.fs-claude.json`, la raíz de la instalación cuando el plugin está en `Plugins/`, y por último el directorio actual.
 - `--json` — informe completo en JSON, útil para procesar los símbolos uno a uno.
 - `--include-tests` — analiza también `Test/`, que por defecto se excluye porque usa PHPUnit y no el core.
-- `--min-confidence alta|media|baja` — filtra el ruido: `alta` deja solo clases, llamadas estáticas resueltas y pipes.
+- `--min-confidence alta|media|baja` — filtra el ruido: `alta` deja solo clases, llamadas estáticas resueltas, métodos de instancia cuyo receptor tiene tipo conocido y pipes.
 - `--plugins-dir` — directorio `Plugins/` donde buscar los símbolos que aporten otros plugins. Se deduce solo cuando el plugin está instalado.
+- `--max-version` — versión del core que el plugin tiene que soportar. Sin ella, los símbolos eliminados se informan pero no cambian el resultado; con ella, cualquiera retirado en esa versión o antes lo hace incumplir.
 
 El script comprueba la **presencia de cada símbolo en cada etiqueta de versión** del repositorio del core (`git grep <patrón> <tag>`), con búsqueda por bisección. No usa el historial de commits, de modo que un renombrado de archivo o un cambio de firma no falsean el resultado.
 
@@ -55,7 +56,7 @@ Código de salida: `0` cumple, `1` incumple, `2` error de configuración (por ej
 | --- | --- | --- |
 | `ok` | El símbolo existe en la versión declarada | Nada |
 | `posterior` | Se añadió en una versión más nueva | Subir `min_version` o dejar de usarlo |
-| `eliminado` | Existió pero ya no está en la última versión | El plugin se romperá al actualizar el core |
+| `eliminado` | Existió pero ya no está en la última versión | El plugin se romperá al actualizar el core; «Funciona hasta» dice en qué versión |
 | `aportado por plugin` | Lo declara otro plugin instalado | Comprobar que está en `require` |
 | `aportado por vendor` | Lo declara una librería de `vendor/` | Nada, no afecta al `min_version` |
 | `método añadido` | La extensión añade el método a la clase, y algo del plugin lo invoca | Nada |
@@ -144,7 +145,7 @@ Clasifica cada hallazgo revisado como **justificado** (uso legítimo y proporcio
 
 ## Límites que debes declarar siempre
 
-- El análisis es estático y basado en expresiones regulares: no resuelve tipos, así que un método de confianza media puede corresponder a otra clase con el mismo nombre.
+- El análisis es estático y basado en expresiones regulares: solo infiere el tipo del receptor a un nivel (`new Clase()`, parámetros y propiedades tipados), así que un método de confianza media puede corresponder a otra clase con el mismo nombre.
 - Los símbolos que no son del core se atribuyen buscándolos en los plugins hermanos y en `vendor/`. Fuera de una instalación completa, ese ruido reaparece.
 - No audita los requisitos de los plugins declarados en `require`, ni los símbolos que aporta otro plugin.
 - La auditoría de compatibilidad solo analiza PHP: no comprueba las funciones ni los bloques de plantilla que usan los Twig, ni los XMLView, ni el JavaScript. Las plantillas solo se leen para saber qué métodos invoca el plugin, así que un `min_version` más alto que el calculado puede estar justificado por un cambio del core que no ves.
