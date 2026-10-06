@@ -567,6 +567,70 @@ class PipeAuditTest(unittest.TestCase):
             self.assertFalse(any('sin pipe()' in aviso for aviso in report['avisos']))
 
 
+class CaseSensitivityTest(unittest.TestCase):
+    """PHP no distingue mayúsculas en métodos ni clases, pero sí en propiedades y pipes."""
+
+    def audit_plugin(self, tmp: str, body: str, extension: str | None = None) -> dict[str, str]:
+        """Audita el plugin y devuelve el estado de cada símbolo."""
+        core_repo = CHECKER.CoreRepo(path=build_core(Path(tmp)))
+        core_repo.load_tags()
+        plugin = build_plugin(Path(tmp), '2025', body)
+        if extension:
+            (plugin / 'Extension' / 'Controller').mkdir(parents=True)
+            (plugin / 'Extension' / 'Controller' / 'ListCliente.php').write_text(extension)
+        info = CHECKER.read_plugin_ini(plugin)
+        symbols, external = CHECKER.collect_symbols(plugin, include_tests=False)
+        target = core_repo.target_tag(info.min_version)
+        results = CHECKER.audit(symbols, core_repo, target, workers=2)
+        report = CHECKER.build_report(info, core_repo, target, results, external)
+        return {item['simbolo']: item['estado'] for item in report['symbols']}
+
+    def test_methods_ignore_case(self) -> None:
+        """->Run() se resuelve contra function run( y Tools::Env() contra function env(."""
+        with tempfile.TemporaryDirectory() as tmp:
+            estados = self.audit_plugin(tmp, (
+                '<?php\n'
+                'use FacturaScripts\\Core\\Tools;\n'
+                'class Init { public function init($c): void { $c->Run(); Tools::Env(); } }\n'
+            ))
+
+            self.assertEqual('ok', estados['->Run()'])
+            self.assertEqual('posterior', estados['Tools::Env()'])
+
+    def test_own_method_called_with_other_case_is_not_audited(self) -> None:
+        """Un método propio invocado con otras mayúsculas sigue siendo del plugin."""
+        with tempfile.TemporaryDirectory() as tmp:
+            estados = self.audit_plugin(tmp, (
+                '<?php\n'
+                'class Init { public function miMetodo() {} '
+                'public function init(): void { $this->MIMETODO(); } }\n'
+            ))
+
+            self.assertNotIn('->MIMETODO()', estados)
+
+    def test_properties_keep_case(self) -> None:
+        """->OrderOptions no es la propiedad $orderOptions del core."""
+        with tempfile.TemporaryDirectory() as tmp:
+            estados = self.audit_plugin(tmp, (
+                '<?php\n'
+                'class Init { public function init($c): void { $a = $c->orderOptions; $b = $c->OrderOptions; } }\n'
+            ))
+
+            self.assertEqual('ok', estados['->orderOptions'])
+            self.assertEqual('no encontrado', estados['->OrderOptions'])
+
+    def test_pipes_keep_case(self) -> None:
+        """pipe('createViews') no casa con un Closure llamado createviews."""
+        with tempfile.TemporaryDirectory() as tmp:
+            estados = self.audit_plugin(tmp, '<?php\nclass Init {}\n', (
+                '<?php\nclass ListCliente {\n'
+                '    public function createviews(): Closure { return function () {}; }\n'
+                '}\n'
+            ))
+
+            self.assertEqual('no encontrado', estados["pipe('createviews')"])
+
+
 class AuditTest(unittest.TestCase):
     """Comprueba el resultado de auditar un plugin contra el core simulado."""
 
