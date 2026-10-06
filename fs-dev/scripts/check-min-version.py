@@ -67,6 +67,13 @@ USE_PATTERN = re.compile(r'^\s*use\s+(FacturaScripts\\[\w\\]+)(?:\s+as\s+(\w+))?
 EXTENDS_PATTERN = re.compile(r'\b(?:extends|implements)\s+([\w\\, ]+?)\s*[{\n]')
 STATIC_CALL_PATTERN = re.compile(r'(?<![\w$>])([A-Z]\w*)::\s*(\w+)\s*\(')
 METHOD_CALL_PATTERN = re.compile(r'->\s*(\w+)\s*\(')
+# Inferencia de tipos de un nivel: $x = new Clase(...), y parámetros o propiedades tipados.
+NEW_ASSIGN_PATTERN = re.compile(r'\$(?P<var>\w+)\s*=\s*new\s+(?P<type>\\?[A-Z][\w\\]*)')
+TYPED_DECLARATION_PATTERN = re.compile(
+    r'(?:[(,]|\b(?:public|protected|private|readonly|static))\s*'
+    r'\??(?P<type>\\?[A-Z][\w\\]*)\s+&?(?:\.\.\.)?\$(?P<var>\w+)')
+# Receptor de una llamada ->metodo(): $variable o $this->propiedad.
+RECEIVER_PATTERN = re.compile(r'\$(?P<this>this\s*->\s*)?(?P<name>\w+)\s*$')
 # En Twig los métodos se invocan con punto: fsc.contact.getTwoFactorQR().
 TWIG_CALL_PATTERN = re.compile(r'\.\s*(\w+)\s*\(')
 PROPERTY_PATTERN = re.compile(r'->\s*(\w+)\b(?!\s*\()')
@@ -477,6 +484,34 @@ def is_own_class(fqcn: str, plugin_dir: Path) -> bool:
     return (plugin_dir / Path(*parts[2:]).with_suffix('.php')).is_file()
 
 
+def variable_types(content: str, aliases: dict[str, str], plugin_dir: Path) -> dict[str, str]:
+    """Infiere la clase del core de las variables y propiedades de un archivo.
+
+    Solo mira un nivel: ``$x = new Clase(...)`` y las declaraciones tipadas de
+    parámetros y propiedades. Un nombre al que se le infieren dos clases distintas
+    en el mismo archivo se descarta, para no atribuir el método a la equivocada.
+    """
+    found: dict[str, set[str]] = {}
+    for pattern in (NEW_ASSIGN_PATTERN, TYPED_DECLARATION_PATTERN):
+        for match in pattern.finditer(content):
+            name = match.group('type').lstrip('\\')
+            if name.startswith('FacturaScripts\\'):
+                fqcn = None if is_own_class(name, plugin_dir) else name
+            else:
+                fqcn = aliases.get(name)
+            if fqcn and class_path(fqcn):
+                found.setdefault(match.group('var'), set()).add(fqcn)
+    return {var: next(iter(types)) for var, types in found.items() if len(types) == 1}
+
+
+def receiver_type(content: str, position: int, types: dict[str, str]) -> str | None:
+    """Devuelve la clase del receptor de la llamada que empieza en ``position``."""
+    match = RECEIVER_PATTERN.search(content[max(0, position - 200):position])
+    if match is None or (match.group('this') is None and match.group('name') == 'this'):
+        return None
+    return types.get(match.group('name'))
+
+
 def collect_symbols(plugin_dir: Path, include_tests: bool) -> tuple[list[Symbol], list[str]]:
     """Extrae del plugin los símbolos del core y las dependencias externas."""
     files = php_files(plugin_dir, include_tests)
@@ -585,9 +620,23 @@ def collect_symbols(plugin_dir: Path, include_tests: bool) -> tuple[list[Symbol]
                     origin=relative,
                 ))
 
-        # 5. Métodos de instancia que no define el plugin.
-        for method in METHOD_CALL_PATTERN.findall(content):
+        # 5. Métodos de instancia que no define el plugin. Si se conoce la clase del
+        # receptor, el método se busca en el archivo de esa clase.
+        types = variable_types(content, aliases, plugin_dir)
+        for match in METHOD_CALL_PATTERN.finditer(content):
+            method = match.group(1)
             if method in IGNORED_MEMBERS or method in own_methods:
+                continue
+            fqcn = receiver_type(content, match.start(), types)
+            if fqcn:
+                short_name = fqcn.split('\\')[-1]
+                add(Symbol(
+                    kind='método',
+                    label=f'{short_name}->{method}()',
+                    patterns=(f'function {method}(',),
+                    pathspecs=(class_path(fqcn),),
+                    origin=relative,
+                ))
                 continue
             add(Symbol(
                 kind='método',
@@ -636,7 +685,10 @@ def audit_symbol(symbol: Symbol, core: CoreRepo, target: tuple[float, str],
                             since_version=versions.get(since or ''))
 
     # Puede estar declarado en una clase padre: repite la búsqueda en todo Core/.
-    if symbol.pathspecs != ('Core/',):
+    # Un método de instancia que su clase sí declara en la última versión no se
+    # ensancha: otra clase con un método homónimo daría una fecha que no es la suya.
+    if symbol.pathspecs != ('Core/',) and not (
+            symbol.kind == 'método' and core.exists_in(core.tags[-1][1], symbol)):
         wider = symbol.widened()
         if core.exists_in(target_tag, wider):
             since = core.first_tag_with(wider)

@@ -301,6 +301,100 @@ class NoiseFilterTest(unittest.TestCase):
             self.assertTrue(pipes["pipe('getTwoFactorQR')"])
 
 
+def build_request_core(root: Path) -> Path:
+    """Crea un core en el que dos clases declaran un método con el mismo nombre.
+
+    v2025: Response tiene json(); Request no.
+    v2026: Request gana json().
+    """
+    core = root / 'core'
+    (core / 'Core' / 'Model').mkdir(parents=True)
+    subprocess.run(('git', 'init', '-q', str(core)), check=True, capture_output=True)
+    (core / 'Core' / 'Response.php').write_text(
+        '<?php\nclass Response\n{\n    public function json(array $data): void {}\n}\n')
+    (core / 'Core' / 'Model' / 'ModelClass.php').write_text(
+        '<?php\nabstract class ModelClass\n{\n    public function save(): bool {}\n}\n')
+    (core / 'Core' / 'Model' / 'Cliente.php').write_text(
+        '<?php\nclass Cliente extends ModelClass\n{\n}\n')
+    request = core / 'Core' / 'Request.php'
+    for tag, body in (('v2025', ''), ('v2026', '    public function json() {}\n')):
+        request.write_text('<?php\nclass Request\n{\n    public function host() {}\n' + body + '}\n')
+        for args in (('add', '-A'),
+                     ('-c', 'user.email=test@test', '-c', 'user.name=test', 'commit', '-m', tag),
+                     ('tag', tag)):
+            subprocess.run(('git', '-C', str(core), *args), check=True, capture_output=True)
+    return core
+
+
+class TypedMethodCallTest(unittest.TestCase):
+    """Un ->metodo() se busca en la clase del receptor cuando se conoce."""
+
+    def audit_plugin(self, tmp: str, body: str) -> dict[str, dict]:
+        """Audita el plugin y devuelve los símbolos indexados por su etiqueta."""
+        core_repo = CHECKER.CoreRepo(path=build_request_core(Path(tmp)))
+        core_repo.load_tags()
+        plugin = build_plugin(Path(tmp), '2025', body)
+        info = CHECKER.read_plugin_ini(plugin)
+        symbols, external = CHECKER.collect_symbols(plugin, include_tests=False)
+        target = core_repo.target_tag(info.min_version)
+        results = CHECKER.audit(symbols, core_repo, target, workers=2)
+        report = CHECKER.build_report(info, core_repo, target, results, external)
+        return {item['simbolo']: item for item in report['symbols']}
+
+    def test_typed_parameter_is_resolved_against_its_class(self) -> None:
+        """Request::json() es de v2026 aunque Response::json() exista desde v2025."""
+        with tempfile.TemporaryDirectory() as tmp:
+            symbols = self.audit_plugin(tmp, (
+                '<?php\n'
+                'use FacturaScripts\\Core\\Request;\n'
+                'class Init { public function leer(Request $request) { return $request->json(); } }\n'
+            ))
+
+            self.assertNotIn('->json()', symbols)
+            self.assertEqual('posterior', symbols['Request->json()']['estado'])
+            self.assertEqual('v2026', symbols['Request->json()']['desde'])
+            self.assertEqual('alta', symbols['Request->json()']['confianza'])
+
+    def test_new_and_typed_property_are_resolved(self) -> None:
+        """$x = new Clase() y una propiedad tipada también fijan la clase."""
+        with tempfile.TemporaryDirectory() as tmp:
+            symbols = self.audit_plugin(tmp, (
+                '<?php\n'
+                'use FacturaScripts\\Core\\Request;\n'
+                'class Init {\n'
+                '    private Request $peticion;\n'
+                '    public function a() { $r = new Request(); return $r->host(); }\n'
+                '    public function b() { return $this->peticion->json(); }\n'
+                '}\n'
+            ))
+
+            self.assertEqual('ok', symbols['Request->host()']['estado'])
+            self.assertEqual('posterior', symbols['Request->json()']['estado'])
+
+    def test_inherited_method_still_widens_to_core(self) -> None:
+        """Si la clase no declara el método, se busca en sus padres por todo Core/."""
+        with tempfile.TemporaryDirectory() as tmp:
+            symbols = self.audit_plugin(tmp, (
+                '<?php\n'
+                'use FacturaScripts\\Dinamic\\Model\\Cliente;\n'
+                'class Init { public function a(Cliente $cliente) { return $cliente->save(); } }\n'
+            ))
+
+            self.assertEqual('ok', symbols['Cliente->save()']['estado'])
+            self.assertEqual('media', symbols['Cliente->save()']['confianza'])
+
+    def test_unknown_receiver_keeps_the_generic_search(self) -> None:
+        """Sin tipo conocido se mantiene la búsqueda por nombre en todo Core/."""
+        with tempfile.TemporaryDirectory() as tmp:
+            symbols = self.audit_plugin(tmp, (
+                '<?php\n'
+                'class Init { public function a($algo) { return $algo->json(); } }\n'
+            ))
+
+            self.assertEqual('ok', symbols['->json()']['estado'])
+            self.assertEqual('media', symbols['->json()']['confianza'])
+
+
 class ProviderTest(unittest.TestCase):
     """Comprueba la atribución de símbolos a otros plugins o a vendor."""
 
