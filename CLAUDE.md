@@ -110,6 +110,35 @@ aquí sólo lo que hace falta para trabajar dentro.
   (`Asermar/fs-claude-plugin-private`) y son **permanentes** — nunca irán a upstream. Si un cambio
   no tiene sentido para el proyecto original, no empieza aquí.
 
+## La norma: seguir lo publicado
+
+Dicha por Alexis el 7-oct-2026.
+
+- **Este fork sigue a upstream.** Cada versión que upstream publica se integra aquí y en el
+  duplicado privado **sin necesidad de preguntar**.
+- **Lo que upstream no tiene se le ofrece por PR.**
+- **Aquí solo divergen dos cosas**, y las dos constan en `.oko/divergencias.tsv`:
+  - nuestros PR **sin aprobar**, de forma temporal (`vigente`);
+  - los **rechazados**, de forma fija mientras a nuestro juicio sigan teniendo motivo (`permanente`).
+
+  Lo que upstream acepta pasa a `retirado`. Aparte queda lo propio del fork: `.oko/`, este
+  `CLAUDE.md` y la línea `version` de cada `plugin.json`.
+- **Lo que la norma NO cubre: desplegar el servidor MCP con un pin nuevo.** Es producción de un
+  cliente y se autoriza en cada despliegue.
+
+Cómo se integra cada versión, en este orden:
+
+1. `git fetch upstream` y avance rápido de `original` a `upstream/main`
+   (`git push origin upstream/main:refs/heads/original`). Es solo un avance: `original` no lleva
+   nada propio, así que si no fuera un fast-forward, algo va mal.
+2. Merge `--no-ff` de `original` en `main`, por una rama `feature/*`. El conflicto habitual es la
+   línea `version` de algún `plugin.json`: se queda la nuestra y se sube si el contenido de ese
+   plugin cambia, como dice la cabecera de `.oko/base.tsv`, que además recoge la base nueva.
+3. Comprobar que `git diff upstream/main main` solo toca lo que la norma permite, y pasar
+   `claude-dist plugins fork --clon <la rama>`.
+4. Llevar ese `main` al duplicado privado, a la rama de su pin, borrando `.oko/`, y mover el pin en
+   `develop` de `Asermar/fs-remote-mcp`. Ahí se para: lo siguiente ya es desplegar.
+
 ## La topología no es la que parece: `main` es NUESTRA
 
 - `main` = lo nuestro (lo que instala la flota). `original` = el espejo de upstream.
