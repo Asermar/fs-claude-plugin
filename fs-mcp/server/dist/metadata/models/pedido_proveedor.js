@@ -9,6 +9,18 @@ export const pedidoProveedorMetadata = {
     "source": "core",
     "columns": [
         {
+            "name": "apartado",
+            "sqlType": "character varying(10)",
+            "tsType": "string",
+            "nullable": true,
+            "isPrimaryKey": false,
+            "isReadonly": false,
+            "isRequired": false,
+            "label": "apartado",
+            "maxLength": 10,
+            "description": "Apartado postal de la dirección del proveedor en el pedido."
+        },
+        {
             "name": "cifnif",
             "sqlType": "character varying(30)",
             "tsType": "string",
@@ -19,6 +31,18 @@ export const pedidoProveedorMetadata = {
             "label": "CIF/NIF",
             "maxLength": 30,
             "description": "CIF/NIF del proveedor, copiado al crear el pedido."
+        },
+        {
+            "name": "ciudad",
+            "sqlType": "character varying(100)",
+            "tsType": "string",
+            "nullable": true,
+            "isPrimaryKey": false,
+            "isReadonly": false,
+            "isRequired": false,
+            "label": "ciudad",
+            "maxLength": 100,
+            "description": "Ciudad de la dirección del proveedor en el pedido."
         },
         {
             "name": "codalmacen",
@@ -105,6 +129,30 @@ export const pedidoProveedorMetadata = {
             }
         },
         {
+            "name": "codpais",
+            "sqlType": "character varying(20)",
+            "tsType": "string",
+            "nullable": true,
+            "isPrimaryKey": false,
+            "isReadonly": false,
+            "isRequired": false,
+            "label": "codpais",
+            "maxLength": 20,
+            "description": "Código del país de la dirección del proveedor."
+        },
+        {
+            "name": "codpostal",
+            "sqlType": "character varying(10)",
+            "tsType": "string",
+            "nullable": true,
+            "isPrimaryKey": false,
+            "isReadonly": false,
+            "isRequired": false,
+            "label": "codpostal",
+            "maxLength": 10,
+            "description": "Código postal de la dirección del proveedor."
+        },
+        {
             "name": "codproveedor",
             "sqlType": "character varying(10)",
             "tsType": "string",
@@ -163,6 +211,18 @@ export const pedidoProveedorMetadata = {
             "label": "dtopor2",
             "description": "Segundo porcentaje de descuento aplicado tras dtopor1.",
             "widget": "number"
+        },
+        {
+            "name": "direccion",
+            "sqlType": "character varying(200)",
+            "tsType": "string",
+            "nullable": true,
+            "isPrimaryKey": false,
+            "isReadonly": false,
+            "isRequired": false,
+            "label": "direccion",
+            "maxLength": 200,
+            "description": "Dirección postal del proveedor, copiada de su dirección al crear el pedido (snapshot)."
         },
         {
             "name": "editable",
@@ -395,15 +455,27 @@ export const pedidoProveedorMetadata = {
         },
         {
             "name": "operacion",
-            "sqlType": "character varying(20)",
+            "sqlType": "character varying(30)",
             "tsType": "string",
             "nullable": true,
             "isPrimaryKey": false,
             "isReadonly": false,
             "isRequired": false,
             "label": "operacion",
-            "maxLength": 20,
+            "maxLength": 30,
             "description": "Tipo de operación fiscal."
+        },
+        {
+            "name": "provincia",
+            "sqlType": "character varying(100)",
+            "tsType": "string",
+            "nullable": true,
+            "isPrimaryKey": false,
+            "isReadonly": false,
+            "isRequired": false,
+            "label": "provincia",
+            "maxLength": 100,
+            "description": "Provincia de la dirección del proveedor en el pedido."
         },
         {
             "name": "tasaconv",
@@ -571,8 +643,8 @@ export const pedidoProveedorMetadata = {
         }
     ],
     "generatedFrom": {
-        "generatedAt": "2026-04-25T12:48:58.060Z",
-        "facturascriptsCommit": "262e79208"
+        "generatedAt": "2026-10-06T17:52:38.200Z",
+        "facturascriptsCommit": "93a6a74ac"
     }
 };
 export default pedidoProveedorMetadata;

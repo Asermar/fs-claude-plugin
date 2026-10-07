@@ -193,7 +193,7 @@ export const proveedorMetadata = {
             "isPrimaryKey": false,
             "isReadonly": true,
             "isRequired": false,
-            "label": "Fecha de creación",
+            "label": "Fecha creación",
             "description": "Fecha de alta del proveedor en el sistema.",
             "widget": "date"
         },
@@ -261,14 +261,14 @@ export const proveedorMetadata = {
         },
         {
             "name": "operacion",
-            "sqlType": "character varying(20)",
+            "sqlType": "character varying(30)",
             "tsType": "string",
             "nullable": true,
             "isPrimaryKey": false,
             "isReadonly": false,
             "isRequired": false,
             "label": "Operación",
-            "maxLength": 20,
+            "maxLength": 30,
             "description": "Tipo de operación fiscal por defecto en sus facturas.",
             "widget": "select"
         },
@@ -448,8 +448,8 @@ export const proveedorMetadata = {
         }
     ],
     "generatedFrom": {
-        "generatedAt": "2026-04-25T12:48:58.060Z",
-        "facturascriptsCommit": "262e79208"
+        "generatedAt": "2026-10-06T17:52:38.200Z",
+        "facturascriptsCommit": "93a6a74ac"
     }
 };
 export default proveedorMetadata;

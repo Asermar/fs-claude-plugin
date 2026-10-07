@@ -57,7 +57,7 @@ export const empresaMetadata: ModelMetadata = {
             "nullable": true,
             "isPrimaryKey": false,
             "isReadonly": false,
-            "isRequired": false,
+            "isRequired": true,
             "label": "Ciudad",
             "maxLength": 100,
             "description": "Ciudad de la sede social.",
@@ -136,7 +136,7 @@ export const empresaMetadata: ModelMetadata = {
             "isPrimaryKey": false,
             "isReadonly": false,
             "isRequired": false,
-            "label": "Fecha de inicio",
+            "label": "Fecha inicio",
             "description": "Fecha de alta de la empresa en el sistema.",
             "widget": "date"
         },
@@ -232,7 +232,7 @@ export const empresaMetadata: ModelMetadata = {
             "nullable": true,
             "isPrimaryKey": false,
             "isReadonly": false,
-            "isRequired": false,
+            "isRequired": true,
             "label": "Provincia",
             "maxLength": 100,
             "description": "Provincia de la sede social.",
@@ -433,8 +433,8 @@ export const empresaMetadata: ModelMetadata = {
         }
     ],
     "generatedFrom": {
-        "generatedAt": "2026-04-25T12:48:58.060Z",
-        "facturascriptsCommit": "262e79208"
+        "generatedAt": "2026-10-06T17:52:38.200Z",
+        "facturascriptsCommit": "93a6a74ac"
     }
 };
 

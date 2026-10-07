@@ -58,14 +58,14 @@ export const logMessageMetadata = {
         },
         {
             "name": "ip",
-            "sqlType": "character varying(40)",
+            "sqlType": "character varying(45)",
             "tsType": "string",
             "nullable": true,
             "isPrimaryKey": false,
             "isReadonly": false,
             "isRequired": false,
             "label": "IP",
-            "maxLength": 40,
+            "maxLength": 45,
             "description": "Dirección IP desde la que se originó el evento."
         },
         {
@@ -155,8 +155,8 @@ export const logMessageMetadata = {
     ],
     "relations": [],
     "generatedFrom": {
-        "generatedAt": "2026-04-25T12:48:58.060Z",
-        "facturascriptsCommit": "262e79208"
+        "generatedAt": "2026-10-06T17:52:38.200Z",
+        "facturascriptsCommit": "93a6a74ac"
     }
 };
 export default logMessageMetadata;

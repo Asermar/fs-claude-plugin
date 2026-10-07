@@ -530,14 +530,14 @@ export const albaranClienteMetadata: ModelMetadata = {
         },
         {
             "name": "operacion",
-            "sqlType": "character varying(20)",
+            "sqlType": "character varying(30)",
             "tsType": "string",
             "nullable": true,
             "isPrimaryKey": false,
             "isReadonly": false,
             "isRequired": false,
             "label": "operacion",
-            "maxLength": 20,
+            "maxLength": 30,
             "description": "Tipo de operación fiscal (interior, intracomunitaria, exportación, etc.)."
         },
         {
@@ -756,8 +756,8 @@ export const albaranClienteMetadata: ModelMetadata = {
         }
     ],
     "generatedFrom": {
-        "generatedAt": "2026-04-25T12:48:58.060Z",
-        "facturascriptsCommit": "262e79208"
+        "generatedAt": "2026-10-06T17:52:38.200Z",
+        "facturascriptsCommit": "93a6a74ac"
     }
 };
 

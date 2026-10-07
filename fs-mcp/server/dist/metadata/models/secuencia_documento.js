@@ -101,6 +101,19 @@ export const secuenciaDocumentoMetadata = {
             "widget": "number"
         },
         {
+            "name": "mantenerfecha",
+            "sqlType": "boolean",
+            "tsType": "boolean",
+            "nullable": false,
+            "isPrimaryKey": false,
+            "isReadonly": false,
+            "isRequired": false,
+            "label": "Mantener fecha",
+            "default": false,
+            "description": "True si al rellenar un hueco de numeración se respeta la fecha del documento en lugar de asignarle la del documento anterior. Solo aplica a tipos que no exigen orden cronológico.",
+            "widget": "checkbox"
+        },
+        {
             "name": "numero",
             "sqlType": "integer",
             "tsType": "number",
@@ -186,8 +199,8 @@ export const secuenciaDocumentoMetadata = {
         }
     ],
     "generatedFrom": {
-        "generatedAt": "2026-04-25T12:48:58.060Z",
-        "facturascriptsCommit": "262e79208"
+        "generatedAt": "2026-10-06T17:52:38.200Z",
+        "facturascriptsCommit": "93a6a74ac"
     }
 };
 export default secuenciaDocumentoMetadata;
