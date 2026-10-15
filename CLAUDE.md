@@ -155,8 +155,14 @@ En cuanto el PR está abierto, por una rama `feature/integra-*`:
    `.oko/base.tsv`: sin la subida, los equipos no ven actualización.
 4. Los tests del plugin y `claude-dist plugins fork --clon <la rama>`, y después merge en `main`.
 
-Llevarlo al privado es otra decisión, porque de ahí sale el servidor remoto. Se dice explícitamente
-si se lleva o no, y no se deja en el aire.
+Y después, **siempre, al privado**, con el paso 4 de arriba: rama del pin, borrando `.oko/`, y el pin
+movido en `develop` de `fs-remote-mcp`. No es una decisión aparte. Lo que sí se autoriza cada vez es
+desplegar ese pin.
+
+**Qué contiene cada capa** (Alexis, 15-oct-2026):
+
+- **el fork** = upstream + nuestros PR pendientes + los rechazados que sigan siendo válidos;
+- **el privado** = el fork entero + lo nuestro privado: HTTP, OAuth y las listas de tools.
 
 > Por qué está escrito (15-oct-2026): el PR #16 pasó una semana abierto **sin estar en `main`**,
 > mientras el #17, abierto después, sí entró. El plan del #16 sólo preveía llevarlo al privado y
