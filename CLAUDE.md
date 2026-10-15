@@ -139,6 +139,30 @@ Cómo se integra cada versión, en este orden:
 4. Llevar ese `main` al duplicado privado, a la rama de su pin, borrando `.oko/`, y mover el pin en
    `develop` de `Asermar/fs-remote-mcp`. Ahí se para: lo siguiente ya es desplegar.
 
+## Cada PR propio entra en `main` en cuanto se abre
+
+**Abrir un PR a upstream y llevar su rama a `main` son UN solo paso, no dos.** La flota instala
+`main`, así que un PR que sólo existe en GitHub no lo usa nadie mientras upstream lo estudia, que
+puede ser semanas. Y no es una opción: es lo que significa `vigente`.
+
+En cuanto el PR está abierto, por una rama `feature/integra-*`:
+
+1. Merge `--no-ff` de la rama del PR en `main`. La rama sale de `upstream/main` y `main` ya contiene
+   esa base, así que lo esperable es que funda limpio.
+2. Su fila en `.oko/divergencias.tsv` con estado `vigente`, y `pendiente` en la columna del privado
+   hasta que se lleve allí.
+3. Subir la línea `version` del `plugin.json` de cada plugin cuyo contenido cambie, y recogerla en
+   `.oko/base.tsv`: sin la subida, los equipos no ven actualización.
+4. Los tests del plugin y `claude-dist plugins fork --clon <la rama>`, y después merge en `main`.
+
+Llevarlo al privado es otra decisión, porque de ahí sale el servidor remoto. Se dice explícitamente
+si se lleva o no, y no se deja en el aire.
+
+> Por qué está escrito (15-oct-2026): el PR #16 pasó una semana abierto **sin estar en `main`**,
+> mientras el #17, abierto después, sí entró. El plan del #16 sólo preveía llevarlo al privado y
+> esta sección no existía: el procedimiento de arriba cubre las versiones de upstream y no decía
+> nada de los PR propios.
+
 ## La topología no es la que parece: `main` es NUESTRA
 
 - `main` = lo nuestro (lo que instala la flota). `original` = el espejo de upstream.
