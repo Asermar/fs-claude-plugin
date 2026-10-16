@@ -139,6 +139,31 @@ Cómo se integra cada versión, en este orden:
 4. Llevar ese `main` al duplicado privado, a la rama de su pin, borrando `.oko/`, y mover el pin en
    `develop` de `Asermar/fs-remote-mcp`. Ahí se para: lo siguiente ya es desplegar.
 
+## Cómo se escribe cada PR a upstream
+
+El modelo es el PR que el core oficial aceptó a la primera y cuyo autor agradeció por lo bien
+documentado (NeoRazorX/facturascripts#2051, 16-oct-2026). Lo que funcionó allí vale aquí:
+
+- **Rama desde `upstream/main`, un único cambio coherente, y un PR que no dependa de otro abierto.**
+  Si dos arreglos tocan el mismo fichero de tests, se reparten para que cada PR funda solo (así se
+  separó el #18 del #17). Un fallo hermano en el mismo sitio va en el mismo PR; otro problema, en otro.
+- **La reproducción con el propio repo, sin datos de nadie.** El fallo puede salir de un plugin o una
+  instalación nuestra, pero el PR lo cuenta con un caso que el revisor puede ejecutar en su máquina.
+  Ni clientes, ni plugins propios, ni rutas nuestras: se comprueba con un grep antes de abrir.
+- **Tests en `fs-dev/tests/` que fallan sin el cambio, y el PR lo dice así.** Uno por cada rama del
+  arreglo, y cada uno probado con su mutación: se quita esa parte del arreglo y cae sólo su test.
+- **Las pruebas, con lo NO ejecutado marcado.** La lista de «Validación mínima» de arriba, diciendo
+  qué se ejecutó y qué no.
+- **Las decisiones discutibles, explicadas antes de que las pregunten**, y una línea para quien
+  dependa del comportamiento que cambia.
+- **Antes de abrirlo:** supervisor de codificación, revisión de seguridad del lenguaje, y
+  `git merge-tree` contra el `upstream/main` del día.
+- **Al fusionarse**, upstream puede retocarlo: se compara lo fusionado con lo nuestro antes de pasar
+  la fila a `retirado`.
+
+La versión larga, con el caso entero, está en el árbol de conocimiento de la casa:
+`arbol/FS/Core/un-pr-al-core-oficial.md`.
+
 ## Cada PR propio entra en `main` en cuanto se abre
 
 **Abrir un PR a upstream y llevar su rama a `main` son UN solo paso, no dos.** La flota instala
