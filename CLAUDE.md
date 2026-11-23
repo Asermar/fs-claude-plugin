@@ -29,10 +29,12 @@ Este repositorio distribuye los plugins `fs-dev`, `fs-user` y `fs-mcp` de Factur
 - Las skills de `*/skills/<nombre>/SKILL.md` son la interfaz portable común a Claude Code y Codex.
 - Mantén el frontmatter YAML válido y limita `description` a una explicación breve, discriminante y útil para la selección automática. Evita catálogos extensos de ejemplos en la descripción.
 - Resuelve los recursos relativos respecto al directorio de la skill y enlázalos desde `SKILL.md`.
+- En `SKILL.md` y en los perfiles de `agents/` usa rutas relativas al propio archivo para scripts y referencias. Cita `${CLAUDE_PLUGIN_ROOT}` solo como equivalente en Claude Code: no existe en el entorno de Bash y Codex no la sustituye en esos archivos.
 - Los agentes Markdown de `*/agents/*.md` son nativos de Claude Code. Codex debe poder reutilizarlos como perfiles leídos desde una skill sin depender de un tipo de agente propietario.
 - Cuando añadas una nueva especialidad en `fs-dev`, crea o actualiza conjuntamente:
   1. El perfil `fs-dev/agents/<nombre>.md` para Claude Code.
   2. La skill `fs-dev/skills/<nombre>/SKILL.md` que lea ese perfil y pueda aplicarlo directamente en Codex o delegarlo a un subagente genérico.
+  La única excepción de nombre es `compatibility-auditor`, cuya skill es `verificar-min-version`.
 - No declares el campo `agents` en `plugin.json` cuando los agentes estén en el directorio estándar `agents/`; permite que Claude Code los descubra automáticamente.
 - Si un agente necesita documentación técnica o de usuario, precarga `docs-expert` mediante su campo `skills`.
 - Guarda documentación y catálogos únicamente en `references/`, nunca dentro de `agents/`, porque Claude Code valida recursivamente los Markdown situados bajo el directorio de agentes.
@@ -48,7 +50,7 @@ Este repositorio distribuye los plugins `fs-dev`, `fs-user` y `fs-mcp` de Factur
   - Codex: `apply_patch`, con el parche en `tool_input.command`.
 - Mantén una única entrada secuencial para transformaciones que puedan escribir sobre el mismo archivo. No configures handlers concurrentes para copyright y ordenación.
 - El hook canónico de edición es `fs-dev/scripts/post-edit.py`: primero actualiza copyright y después ordena la clase PHP.
-- Conserva `SessionStart` en ambos plugins. `CwdChanged` es exclusivo de Claude Code; en Codex el usuario debe abrir un hilo nuevo tras cambiar el directorio de trabajo.
+- Conserva `SessionStart` en ambos plugins como único punto de detección de contexto. No uses `CwdChanged` para inyectar contexto: Claude Code solo lo ejecuta para efectos secundarios y no añade su salida al contexto del modelo, y Codex no tiene ese evento. Tras cambiar el directorio de trabajo, el usuario debe abrir una sesión nueva en Claude Code o un hilo nuevo en Codex.
 - En hooks compartidos usa `${CLAUDE_PLUGIN_ROOT}`, que ambos hosts proporcionan por compatibilidad. En servidores MCP conserva el lanzador portable: Claude Code exporta `CLAUDE_PLUGIN_ROOT` al subproceso y Codex resuelve `cwd: "."` respecto a la raíz instalada del plugin. Cita siempre las rutas usadas en comandos shell para soportar directorios con espacios.
 - Los hooks de Codex requieren revisión del usuario mediante `/hooks`, y una modificación de `hooks.json` invalida la confianza anterior.
 - Cualquier cambio funcional en un script debe incluir o actualizar pruebas automatizadas en `fs-dev/tests/`.
