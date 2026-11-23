@@ -3,6 +3,7 @@
  * Provides tools for accessing communication and notification data
  */
 import { fsClient } from '../../fs/client.js';
+import { pathCode } from '../../utils/pathId.js';
 import { dateRangeFilters } from '../../metadata/dateRange.js';
 export const communicationTools = [
     {
@@ -210,11 +211,11 @@ export async function handleCommunicationTool(name, args) {
             }
             case 'update_emailnotification': {
                 const { connection: _conn, name, ...data } = args;
-                result = await fsClient.put(`/emailnotifications/${name}`, data, connection);
+                result = await fsClient.put(`/emailnotifications/${pathCode(name, 'name')}`, data, connection);
                 break;
             }
             case 'delete_emailnotification': {
-                result = await fsClient.delete(`/emailnotifications/${args.name}`, connection);
+                result = await fsClient.delete(`/emailnotifications/${pathCode(args.name, 'name')}`, connection);
                 break;
             }
             default:

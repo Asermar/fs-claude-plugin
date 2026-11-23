@@ -1,8 +1,145 @@
-import axios, { AxiosInstance } from "axios";
+import axios, { AxiosInstance, AxiosResponse } from "axios";
 import https from "https";
 import { connectionManager } from "../connection-manager.js";
 import { toApiQueryParams } from "../utils/filterParser.js";
 import type { ConnectionConfig } from "../types/facturascripts.js";
+
+/**
+ * Campos que no deben llegar al modelo, por recurso de la API. Es la misma lista
+ * que oculta el core con getApiFieldsToHide() (User, ApiKey y Settings); se aplica
+ * también aquí porque los cores anteriores a ese método devuelven los registros
+ * completos. "columna.clave" es una clave dentro de una columna JSON, como en el core.
+ */
+const API_FIELDS_TO_HIDE: Record<string, string[]> = {
+  users: ["password", "logkey", "two_factor_secret_key"],
+  apikeyes: ["apikey"],
+  settings: ["properties.password"],
+};
+
+function hideFieldsInRecord(record: unknown, fields: string[]): unknown {
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
+    return record;
+  }
+
+  const result: Record<string, unknown> = { ...(record as Record<string, unknown>) };
+  for (const field of fields) {
+    const pos = field.indexOf(".");
+    if (pos === -1) {
+      delete result[field];
+      continue;
+    }
+
+    // Clave dentro de una columna JSON, como texto (lo habitual) o ya decodificada
+    const column = field.slice(0, pos);
+    const key = field.slice(pos + 1);
+    const value = result[column];
+    if (typeof value === "string") {
+      try {
+        const json = JSON.parse(value);
+        if (json && typeof json === "object" && Object.hasOwn(json, key)) {
+          delete json[key];
+          result[column] = JSON.stringify(json);
+        }
+      } catch {
+        // No es JSON: no contiene la clave
+      }
+    } else if (value && typeof value === "object" && Object.hasOwn(value, key)) {
+      const copy = { ...(value as Record<string, unknown>) };
+      delete copy[key];
+      result[column] = copy;
+    }
+  }
+  return result;
+}
+
+const ALL_API_FIELDS_TO_HIDE = [...new Set(Object.values(API_FIELDS_TO_HIDE).flat())];
+
+/**
+ * Campos a ocultar según el recurso al que llegó de verdad la petición. Se mira
+ * la ruta enviada y no la pedida, porque la URL normaliza los segmentos «.» y
+ * «..» (también %2e%2e): «./users» o «x/../users» llegan a /users. Si no se
+ * puede saber el recurso, o la ruta salió de la base de la API, se ocultan
+ * todos los campos conocidos.
+ *
+ * Con un proxy del entorno (http_proxy), axios manda la URL absoluta como ruta, y
+ * de ella sólo cuenta la parte de ruta. Una ruta que no es absoluta no se pasa
+ * por URL: «//x/api/3/…» se leería como el host «x» y la ruta «/api/3/…».
+ */
+function fieldsToHide(response: AxiosResponse): string[] | undefined {
+  const sentPath = (response.request as { path?: unknown } | undefined)?.path;
+  const basePath = new URL(response.config.baseURL ?? "", "http://localhost").pathname.replace(/\/+$/, "");
+  let path = "";
+  if (typeof sentPath === "string") {
+    path = /^[a-z][a-z\d+.-]*:\/\//i.test(sentPath) ? new URL(sentPath).pathname : sentPath.split("?")[0] ?? "";
+  }
+  if (!path.startsWith(`${basePath}/`)) {
+    return ALL_API_FIELDS_TO_HIDE;
+  }
+
+  // Un segmento codificado (%) o con parámetros (;) no se interpreta: se oculta todo
+  const segment = path.slice(basePath.length + 1).split("/")[0] ?? "";
+  if (/[%;]/.test(segment)) {
+    return ALL_API_FIELDS_TO_HIDE;
+  }
+
+  const resource = segment.toLowerCase();
+  return Object.hasOwn(API_FIELDS_TO_HIDE, resource) ? API_FIELDS_TO_HIDE[resource] : undefined;
+}
+
+/**
+ * Principios de línea con «{» o «[» desde los que se busca el JSON detrás de un
+ * aviso de PHP. Las líneas de un aviso empiezan por su tipo, «<br />» o espacios,
+ * así que el JSON suele ser el primero; el margen es para texto de otro origen.
+ */
+const MAX_JSON_STARTS = 20;
+
+/**
+ * Quita los campos indicados de la respuesta. Cubre las tres formas de respuesta
+ * de la API: lista de registros, un registro y {ok, data}.
+ */
+function hideApiFields<T>(fields: string[] | undefined, data: T): T {
+  if (!fields) {
+    return data;
+  }
+
+  // Con texto delante del JSON (un aviso de PHP con display_errors activo),
+  // axios entrega un string: se busca el JSON y se filtra, y si no lo hay se
+  // falla sin devolver el texto, que puede contener los campos. El aviso puede
+  // llevar «{» o «[» («{closure}()», «Undefined array key [x]»), y PHP acaba cada
+  // uno con un salto de línea: el JSON se prueba desde el primer «{» o «[» del
+  // texto y desde los que empiezan una línea, por orden. Cada intento analiza el
+  // resto entero, así que se limitan: sin el tope, un texto con miles de líneas
+  // que empiezan por «[» costaría segundos de CPU
+  if (typeof data === "string") {
+    const starts = new Set([data.search(/[[{]/)]);
+    let lines = 0;
+    for (const match of data.matchAll(/\n[[{]/g)) {
+      if (++lines > MAX_JSON_STARTS) {
+        break;
+      }
+      starts.add(match.index + 1);
+    }
+    starts.delete(-1);
+    for (const start of starts) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(data.slice(start));
+      } catch {
+        continue;
+      }
+      return hideApiFields(fields, parsed) as T;
+    }
+    throw new Error("respuesta no JSON de un recurso con campos sensibles");
+  }
+
+  if (Array.isArray(data)) {
+    return data.map((record) => hideFieldsInRecord(record, fields)) as T;
+  }
+  if (data && typeof data === "object" && "data" in data) {
+    return { ...data, data: hideApiFields(fields, (data as { data: unknown }).data) } as T;
+  }
+  return hideFieldsInRecord(data, fields) as T;
+}
 
 /**
  * Cliente HTTP para la API REST de FacturaScripts
@@ -10,7 +147,7 @@ import type { ConnectionConfig } from "../types/facturascripts.js";
  */
 class FacturaScriptsClient {
   private defaultConnectionKey: string | undefined;
-  private axiosInstances: Map<string, AxiosInstance> = new Map();
+  private axiosInstances: Map<string, { connection: ConnectionConfig; instance: AxiosInstance }> = new Map();
 
   constructor(connectionKey?: string) {
     this.defaultConnectionKey = connectionKey;
@@ -18,10 +155,6 @@ class FacturaScriptsClient {
 
   private getAxiosInstance(connectionKey?: string): AxiosInstance {
     const key = connectionKey || this.defaultConnectionKey;
-
-    if (this.axiosInstances.has(key || "default")) {
-      return this.axiosInstances.get(key || "default")!;
-    }
 
     let connection: ConnectionConfig;
     let resolvedKey: string;
@@ -33,6 +166,14 @@ class FacturaScriptsClient {
       throw new Error(
         `Error al obtener configuración de conexión: ${error instanceof Error ? error.message : String(error)}`
       );
+    }
+
+    // La caché se indexa por la conexión ya resuelta y se descarta si su
+    // configuración cambió: así un cambio de conexión por defecto o de token
+    // surte efecto sin reiniciar el servidor.
+    const cached = this.axiosInstances.get(resolvedKey);
+    if (cached && cached.connection === connection) {
+      return cached.instance;
     }
 
     const shouldRejectUnauthorized =
@@ -52,6 +193,13 @@ class FacturaScriptsClient {
       },
       timeout: 30000,
       httpsAgent,
+      // La API no redirige en uso normal, y al seguir una redirección a otro
+      // host follow-redirects sólo quita Authorization y Cookie: la cabecera
+      // Token se reenviaría al destino.
+      maxRedirects: 0,
+      // Toda ruta va bajo baseURL: una ruta absoluta («http://…» o «//host/…»)
+      // construida con datos del modelo no puede llevar el token a otro host.
+      allowAbsoluteUrls: false,
     });
 
     instance.interceptors.response.use(
@@ -59,7 +207,12 @@ class FacturaScriptsClient {
       (error) => {
         const connectionName = connection.name || resolvedKey;
         const statusCode = error.response?.status || "desconocido";
-        const errorMessage = error.response?.data?.message || error.message || "Error desconocido";
+        const location = error.response?.headers?.location;
+        // Las redirecciones no se siguen (maxRedirects: 0): se dice adónde iban
+        // para que se pueda corregir la URL de la conexión, p. ej. de http a https
+        const errorMessage = location
+          ? `la API ha redirigido a ${location} y no se sigue la redirección para no enviar el token a otra dirección; si es la dirección de la instalación, corrige la URL de la conexión`
+          : error.response?.data?.message || error.message || "Error desconocido";
 
         throw new Error(
           `Error en FacturaScripts (${connectionName}, HTTP ${statusCode}): ${errorMessage}`
@@ -67,7 +220,7 @@ class FacturaScriptsClient {
       }
     );
 
-    this.axiosInstances.set(key || "default", instance);
+    this.axiosInstances.set(resolvedKey, { connection, instance });
 
     return instance;
   }
@@ -107,7 +260,7 @@ class FacturaScriptsClient {
       const response = await instance.get<T>(endpoint, {
         params: toApiQueryParams(params),
       });
-      return response.data;
+      return hideApiFields(fieldsToHide(response), response.data);
     } catch (error) {
       throw new Error(
         `GET ${endpoint}: ${error instanceof Error ? error.message : String(error)}`
@@ -130,7 +283,7 @@ class FacturaScriptsClient {
       const response = await instance.post<T>(endpoint, formData, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
-      return response.data;
+      return hideApiFields(fieldsToHide(response), response.data);
     } catch (error) {
       throw new Error(
         `POST ${endpoint}: ${error instanceof Error ? error.message : String(error)}`
@@ -154,7 +307,7 @@ class FacturaScriptsClient {
       const response = await instance.put<T>(endpoint, formData, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
-      return response.data;
+      return hideApiFields(fieldsToHide(response), response.data);
     } catch (error) {
       throw new Error(
         `PUT ${endpoint}: ${error instanceof Error ? error.message : String(error)}`
@@ -173,7 +326,7 @@ class FacturaScriptsClient {
     try {
       const instance = this.getAxiosInstance(connectionKey);
       const response = await instance.delete<T>(endpoint);
-      return response.data;
+      return hideApiFields(fieldsToHide(response), response.data);
     } catch (error) {
       throw new Error(
         `DELETE ${endpoint}: ${error instanceof Error ? error.message : String(error)}`

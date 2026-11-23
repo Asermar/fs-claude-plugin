@@ -5,8 +5,11 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import unittest.mock
 from contextlib import redirect_stdout
@@ -152,6 +155,42 @@ class SecurityAuditTest(unittest.TestCase):
         notes = [note for item in self.find(report, 'red-saliente') for note in item['notas']]
         self.assertIn('destino: api.proveedor.test', notes)
         self.assertIn('destino: otro.test (asignado a $url)', notes)
+
+    def test_http_con_metodo_dinamico_es_red(self) -> None:
+        """``Http::$metodo()`` y ``Http::{$metodo}()`` hacen una petición aunque no se vea el verbo."""
+        body = ("        $datos = ['limit' => 10];\n"
+                "        $http = Http::$metodo($this->url . '/api/3/' . $recurso, $datos)->setToken($key);\n"
+                "        $otra = \\FacturaScripts\\Core\\Http::{$verbo}('https://remota.test/api', []);\n")
+        report = self.audit({'Lib/Dinamica.php': php_class('Dinamica', body)})
+        findings = self.find(report, 'red-saliente')
+        self.assertEqual([item['linea'] for item in findings], [9, 10])
+        self.assertIn("destino: $this->url . '/api/3/' . $recurso", findings[0]['notas'])
+        self.assertTrue(any('($metodo)' in note for note in findings[0]['notas']))
+        self.assertIn('destino: remota.test', findings[1]['notas'])
+        self.assertTrue(any('({$verbo})' in note for note in findings[1]['notas']))
+        self.assertTrue(report['requiere_revision'])
+        # una variable cualquiera seguida de paréntesis no es la clase Http
+        self.assertEqual(self.find(report, 'codigo-dinamico'), [])
+
+    def test_http_con_constructor_es_red(self) -> None:
+        """``new Http($metodo, $url)`` lleva la URL en el segundo argumento."""
+        body = ("        $url = 'https://constructor.test/v1';\n"
+                "        $http = new Http('GET', $url);\n"
+                "        $otra = new \\FacturaScripts\\Core\\Http($metodo, $this->endpoint);\n")
+        report = self.audit({'Lib/Constructor.php': php_class('Constructor', body)})
+        findings = self.find(report, 'red-saliente')
+        self.assertEqual([item['linea'] for item in findings], [9, 10])
+        self.assertIn('destino: constructor.test', findings[0]['notas'])
+        self.assertIn('destino: $this->endpoint', findings[1]['notas'])
+        self.assertTrue(any('($metodo)' in note for note in findings[1]['notas']))
+
+    def test_metodos_que_no_hacen_peticion_no_son_red(self) -> None:
+        """Otros estáticos de Http y una clase que solo se llama parecido no son una petición."""
+        body = ("        $x = Http::class;\n"
+                "        $y = new HttpClienteFalso();\n"
+                "        $z = MiHttp::get('dato');\n")
+        report = self.audit({'Lib/NoRed.php': php_class('NoRed', body)})
+        self.assertEqual(self.find(report, 'red-saliente'), [])
 
     def test_lectura_de_archivo_local_no_es_red(self) -> None:
         """file_get_contents de una ruta local no es una conexión de red."""
@@ -315,6 +354,662 @@ class SecurityAuditTest(unittest.TestCase):
         self.assertEqual(len(code), len(js))
         self.assertNotIn('nota', text)
         self.assertIn('fetch(', code)
+
+
+class EvasionTest(unittest.TestCase):
+    """Comprueba las formas de ejecutar código que evitan los patrones directos."""
+
+    def setUp(self) -> None:
+        """Prepara un directorio temporal para cada prueba."""
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self) -> None:
+        """Elimina el directorio temporal."""
+        self.tmp.cleanup()
+
+    def audit(self, files: dict[str, str], **kwargs) -> dict:
+        """Audita un plugin construido con los archivos indicados."""
+        return CHECKER.audit(build_plugin(self.root, files), **kwargs)
+
+    @staticmethod
+    def by_title(report: dict) -> dict[str, list[dict]]:
+        """Agrupa los hallazgos por título."""
+        grouped: dict[str, list[dict]] = {}
+        for item in report['hallazgos']:
+            grouped.setdefault(item['titulo'], []).append(item)
+        return grouped
+
+    def test_extensiones_php_alternativas_se_analizan(self) -> None:
+        """.phtml, .inc, .php5, .php7 y .pht se analizan como PHP."""
+        files = {f'Lib/x{suffix}': "<?php exec($_GET['c']);" for suffix in ('.phtml', '.inc', '.php5', '.php7', '.pht')}
+        report = self.audit(files)
+
+        analysed = {item['archivo'] for item in report['hallazgos'] if item['categoria'] == 'ejecucion-comandos'}
+        self.assertEqual(set(files), analysed)
+        self.assertEqual(5, report['analizados']['por_lenguaje']['php'])
+
+    def test_ejecutables_en_assets_son_alta(self) -> None:
+        """Cualquier PHP o ejecutable dentro de Assets/ tiene gravedad alta."""
+        report = self.audit({
+            'Assets/shell.phtml': '<?php echo 1;',
+            'Assets/js/run.sh': 'echo hola\n',
+            'Assets/js/app.js': 'console.log(1);\n',
+        })
+        structure = {item['archivo']: item for item in report['hallazgos'] if item['categoria'] == 'estructura'
+                     and 'Assets/' in item['titulo']}
+
+        self.assertEqual('alta', structure['Assets/shell.phtml']['severidad'])
+        self.assertEqual('alta', structure['Assets/js/run.sh']['severidad'])
+        self.assertNotIn('Assets/js/app.js', structure)
+
+    def test_callbacks_peligrosos(self) -> None:
+        """call_user_func, array_map o usort con una función peligrosa como literal son alta."""
+        body = ("        call_user_func('system', $_GET['c']);\n"
+                "        array_map('\\\\passthru', [$_GET['c']]);\n"
+                "        usort($filas, 'strcmp');\n"
+                "        array_map(fn($fila) => $fila, $filas);\n")
+        report = self.audit({'Lib/Uno.php': php_class('Uno', body)})
+
+        findings = self.by_title(report)['Pasa una función que ejecuta comandos o código como callback']
+        self.assertEqual([(8, 'alta'), (9, 'alta')], [(item['linea'], item['severidad']) for item in findings])
+        self.assertIn('callback: passthru', findings[1]['notas'])
+
+    def test_llamadas_a_funcion_variable(self) -> None:
+        """$f(...) es alta si $f nombra una función peligrosa y se ignora si es una closure."""
+        body = ("        $f = 'shell_' . 'exec';\n        $f($_GET['c']);\n"
+                "        $g = function ($x) { return $x; };\n        $g(1);\n"
+                "        $callback(2);\n"
+                "        $obj = new $clase();\n")
+        report = self.audit({'Lib/Dos.php': php_class('Dos', body)})
+
+        findings = self.by_title(report)['Llama a una función cuyo nombre está en una variable']
+        self.assertEqual([(9, 'alta'), (12, 'baja')], [(item['linea'], item['severidad']) for item in findings])
+        self.assertIn('$f contiene el nombre de la función shell_exec', findings[0]['notas'])
+
+    def test_include_con_directorio_fijo_y_variable(self) -> None:
+        """__DIR__ seguido de una variable se señala; __DIR__ con un literal no."""
+        body = ("        require_once __DIR__ . '/vendor/autoload.php';\n"
+                "        require __DIR__ . '/../' . $_GET['pagina'];\n")
+        report = self.audit({'Lib/Tres.php': php_class('Tres', body)})
+
+        findings = self.by_title(report)['Incluye un archivo PHP calculado en tiempo de ejecución']
+        self.assertEqual([9], [item['linea'] for item in findings])
+        self.assertIn('la ruta parte de un directorio fijo pero concatena una variable', findings[0]['notas'])
+
+    def test_include_que_concatena_una_variable_no_ascii_o_variable(self) -> None:
+        """Una variable concatenada se ve aunque su nombre no sea ASCII o se escriba con ${...}."""
+        cases = {
+            'euro': "include __DIR__ . '/' . $€;\n".encode(),
+            # Un byte 0x80-0xff suelto llega como U+FFFD al leer el archivo
+            'latin1': b"include __DIR__ . '/' . $\xff;\n",
+            'dolar-llave': "include __DIR__ . '/' . ${'f'};\n".encode(),
+        }
+        for name, line in cases.items():
+            with self.subTest(name):
+                plugin = build_plugin(self.root / name, {})
+                (plugin / 'Lib').mkdir()
+                (plugin / 'Lib/Doce.php').write_bytes(b'<?php\n' + line)
+                findings = self.by_title(CHECKER.audit(plugin)).get(
+                    'Incluye un archivo PHP calculado en tiempo de ejecución', [])
+                self.assertEqual([2], [item['linea'] for item in findings])
+                self.assertIn('la ruta parte de un directorio fijo pero concatena una variable', findings[0]['notas'])
+
+    def test_include_con_interpolacion_en_la_cadena(self) -> None:
+        """Una variable interpolada en comillas dobles o en heredoc hace la ruta dinámica."""
+        cases = {
+            'llaves': '        include "{$_GET[\'p\']}.php";',
+            'simple': '        require "$x.php";',
+            'propiedad': '        include "a/{$this->d}/b.php";',
+            'dolar-llave': '        include "${x}.php";',
+            'heredoc': '        include <<<RUTA\n{$x}.php\nRUTA;',
+            'heredoc-comillas': '        include <<<"RUTA"\n$x.php\nRUTA;',
+            # PHP admite nombres de variable que empiezan por un byte 0x80-0xff
+            'no-ascii': '        include "$ñ.php";',
+            'no-ascii-llaves': '        include "{$ñ}.php";',
+            'no-ascii-simbolo': '        include "$€.php";',
+            # Etiqueta de heredoc no ASCII, que PHP también admite
+            'heredoc-no-ascii': '        include <<<ÑR\n$x.php\nÑR;',
+            'heredoc-no-ascii-simbolo': '        include <<<€R\n$x.php\n€R;',
+        }
+        for name, body in cases.items():
+            with self.subTest(name):
+                report = self.audit({'Lib/Cinco.php': php_class('Cinco', body)})
+                findings = self.by_title(report).get('Incluye un archivo PHP calculado en tiempo de ejecución', [])
+                self.assertEqual([8], [item['linea'] for item in findings])
+                self.assertIn('la ruta interpola una variable en la cadena', findings[0]['notas'])
+
+    def test_include_sin_interpolacion_sigue_siendo_fijo(self) -> None:
+        """Comillas simples, nowdoc y un «$» escapado no interpolan: la ruta es fija."""
+        cases = {
+            'literal': '        include "a/b.php";',
+            'simples': "        include 'x{$y}.php';",
+            'escapado': '        include "a\\$x.php";',
+            'nowdoc': "        include <<<'RUTA'\n{$x}.php\nRUTA;",
+        }
+        for name, body in cases.items():
+            with self.subTest(name):
+                report = self.audit({'Lib/Seis.php': php_class('Seis', body)})
+                self.assertNotIn('Incluye un archivo PHP calculado en tiempo de ejecución', self.by_title(report))
+
+    def test_heredoc_con_etiqueta_no_ascii_es_una_cadena(self) -> None:
+        """Un «?>» dentro de un heredoc <<<ÑR no corta la sentencia: la variable de detrás se ve."""
+        body = "        include __DIR__ . '/' . str_repeat(<<<ÑR\n?>\nÑR, 0) . $x . '.php';"
+        report = self.audit({'Lib/Ocho.php': php_class('Ocho', body)})
+        findings = self.by_title(report).get('Incluye un archivo PHP calculado en tiempo de ejecución', [])
+        self.assertEqual([8], [item['linea'] for item in findings])
+        self.assertIn('la ruta parte de un directorio fijo pero concatena una variable', findings[0]['notas'])
+
+    def test_heredoc_cierra_donde_lo_cierra_php(self) -> None:
+        """La etiqueta de cierre acaba donde PHP: sin otro carácter de nombre detrás, también no ASCII.
+
+        Cada caso pasa ``php -l``. El eval del cuerpo es texto, y el include y el system
+        de detrás tienen que verse.
+        """
+        tail = b"include $_GET['f'];\nsystem($_GET['c']);\n"
+        cases = {
+            'euro': '<?php\n$t = <<<A€\neval($_GET[1]);\nA€;\n'.encode(),
+            # Un byte 0x80-0xff suelto llega como U+FFFD al leer el archivo
+            'latin1': b'<?php\n$t = <<<A\xff\neval($_GET[1]);\nA\xff;\n',
+            # «A€» no cierra la etiqueta A: la comilla es parte del cuerpo
+            'cierre-temprano': '<?php\n$t = <<<A\nA€ "\nA;\n'.encode(),
+        }
+        for name, head in cases.items():
+            with self.subTest(name):
+                plugin = build_plugin(self.root / name, {})
+                (plugin / 'Lib').mkdir()
+                (plugin / 'Lib/Nueve.php').write_bytes(head + tail)
+                lines = {item['linea'] for item in CHECKER.audit(plugin)['hallazgos']}
+                self.assertLessEqual({5, 6}, lines)
+                self.assertNotIn(3, lines)
+
+    def test_heredoc_sin_cierre_se_lee_como_codigo(self) -> None:
+        """Sin etiqueta de cierre no hay heredoc: lo que sigue se analiza en vez de darse por cadena."""
+        report = self.audit({'Lib/Diez.php': "<?php\n$t = <<<A\nhola\nsystem($_GET['c']);\n"})
+        self.assertIn(4, [item['linea'] for item in report['hallazgos']])
+
+    def test_muchos_include_en_una_sentencia_no_tardan_de_mas(self) -> None:
+        """Las cadenas y las paradas de la expresión se calculan una vez por archivo, no por include.
+
+        Con 4000 include en una sola sentencia, la base tarda en torno a un cuarto de
+        segundo y una búsqueda por include, decenas. La cota deja margen de sobra.
+        """
+        plugin = build_plugin(self.root, {'Lib/Once.php': '<?php\n' + "include f('')." * 4000 + "'';\n"})
+        started = time.monotonic()
+        CHECKER.audit(plugin)
+        self.assertLess(time.monotonic() - started, 5)
+
+    def test_include_fijo_no_mira_cadenas_que_no_son_su_ruta(self) -> None:
+        """Una cadena interpolada después del include, fuera de su expresión, no lo marca."""
+        cases = {
+            'cierre-y-echo': "<?php include __DIR__ . '/a.php' ?>\n<p>texto</p>\n<?php echo \"Hola $x\"; ?>\n",
+            'cierre-y-atributo': "<?php require __DIR__ . '/a.php' ?>\n<a href=\"<?= $x ?>\">enlace</a>\n",
+            'cierre-y-variable': "<?php include __DIR__ . '/a.php' ?>\n<?php $y = 1; ?>\n",
+            'parentesis': php_class('Siete', "        $cfg = (include __DIR__ . '/cfg.php') + ['k' => \"$x\"];"),
+            'coma': php_class('Siete', "        $r = [include __DIR__ . '/a.php', \"$x\"];"),
+            # La llave que cierra el método está a la profundidad del include, pero después del «;»
+            'despues-del-punto-y-coma': php_class('Siete', "        include __DIR__ . '/a.php';\n        echo \"$x\";"),
+            # Sin «;» ni «?>» hasta el final del archivo: no debe salirse de él
+            'sin-fin': "<?php include __DIR__ . '/a.php'",
+        }
+        for name, content in cases.items():
+            with self.subTest(name):
+                report = self.audit({'Lib/Siete.php': content})
+                self.assertNotIn('Incluye un archivo PHP calculado en tiempo de ejecución', self.by_title(report))
+
+    def test_tests_anidados_se_excluyen(self) -> None:
+        """Un directorio tests/ dentro de Lib/ también se excluye salvo que se pida."""
+        files = {'Lib/tests/UnoTest.php': php_class('UnoTest', "        exec('id');")}
+
+        self.assertEqual([], self.audit(files)['hallazgos'])
+        self.assertTrue(self.audit(files, include_tests=True)['hallazgos'])
+
+    def test_error_inesperado_sale_con_dos(self) -> None:
+        """Una excepción durante el análisis devuelve 2, no 1."""
+        plugin = build_plugin(self.root, {'Lib/Cuatro.php': php_class('Cuatro', '        return 1;')})
+        stderr = io.StringIO()
+        with unittest.mock.patch.object(CHECKER, 'audit', side_effect=RuntimeError('fallo')), \
+                redirect_stdout(io.StringIO()), unittest.mock.patch('sys.stderr', stderr):
+            code = CHECKER.main([str(plugin)])
+
+        self.assertEqual(2, code)
+        self.assertIn('fallo', stderr.getvalue())
+
+    def run_main(self, plugin: Path) -> tuple[int, str]:
+        """Ejecuta el script sobre un plugin y devuelve su código de salida y su salida."""
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = CHECKER.main([str(plugin)])
+        return code, output.getvalue()
+
+    def assert_ejecuta_comandos(self, report: dict) -> None:
+        """El informe señala la ejecución de comandos como alta y pide revisión."""
+        findings = [item for item in report['hallazgos'] if item['categoria'] == 'ejecucion-comandos']
+        self.assertTrue(findings)
+        self.assertEqual('alta', findings[0]['severidad'])
+        self.assertTrue(report['requiere_revision'])
+
+    def test_cierre_de_php_termina_el_comentario_de_linea(self) -> None:
+        """En PHP, ?> cierra un comentario // y lo que le sigue en la línea se ejecuta."""
+        init = ('<?php\nnamespace FacturaScripts\\Plugins\\MiPlugin;\n'
+                "// nota ?><?php system($_GET['c']);\n")
+        self.assert_ejecuta_comandos(self.audit({'Init.php': init}))
+
+    def test_apostrofos_del_html_no_abren_cadenas_de_php(self) -> None:
+        """El HTML entre islas de PHP no es PHP: un apóstrofo ahí no oculta el código siguiente."""
+        body = "        ?><p>It's</p><?php system($_GET['c']) ?><p>Don't</p><?php"
+        self.assert_ejecuta_comandos(self.audit({'Lib/Plantilla.php': php_class('Plantilla', body)}))
+
+    def test_html_antes_de_la_primera_isla_no_es_php(self) -> None:
+        """Un archivo puede empezar en HTML: su apóstrofo no se traga la isla de PHP que sigue."""
+        template = "<p>It's</p>\n<?php system($_GET['c']); ?>\n<p>Don't</p>\n"
+        self.assert_ejecuta_comandos(self.audit({'View/Plantilla.php': template}))
+
+    def test_el_html_conserva_sus_urls(self) -> None:
+        """El HTML de un archivo PHP no se analiza como código, pero sus URL siguen en el inventario."""
+        template = '<?php $titulo = 1; ?>\n<script src="https://cdn.terceros.test/lib.js"></script>\n'
+        report = self.audit({'View/Pagina.php': template})
+        self.assertIn('cdn.terceros.test', [item['dominio'] for item in report['dominios']])
+
+    def test_inc_incluido_desde_init_se_analiza(self) -> None:
+        """Un .inc incluido con __DIR__ se analiza como PHP."""
+        init = ('<?php\nnamespace FacturaScripts\\Plugins\\MiPlugin;\n\nclass Init\n{\n'
+                '    public function init(): void\n    {\n'
+                "        require_once __DIR__ . '/Lib/helper.inc';\n    }\n}\n")
+        report = self.audit({'Init.php': init, 'Lib/helper.inc': "<?php\nsystem($_GET['c']);\n"})
+        self.assert_ejecuta_comandos(report)
+
+    def test_php_en_node_modules_se_analiza(self) -> None:
+        """node_modules/ se sirve directamente: su PHP se analiza y el resto se declara sin analizar."""
+        report = self.audit({
+            'node_modules/x/i.php': "<?php\nsystem($_GET['c']);\n",
+            'node_modules/x/index.js': 'module.exports = 1;\n',
+        })
+        self.assert_ejecuta_comandos(report)
+        self.assertEqual(1, report['analizados']['sin_analizar'])
+        self.assertTrue(any('node_modules/ incluye 1 archivos' in item for item in report['limitaciones']))
+
+    def test_extension_desconocida_con_php_se_analiza(self) -> None:
+        """Un archivo con otra extensión que contiene PHP se analiza, porque un include lo ejecuta."""
+        report = self.audit({'Lib/datos.txt': "<?php\nsystem($_GET['c']);\n"})
+        self.assert_ejecuta_comandos(report)
+
+    def test_js_que_cita_php_se_analiza_como_js(self) -> None:
+        """Un .js que menciona <?php en un comentario sigue siendo JS: sus plantillas no son comandos."""
+        script = '// processing instruction, e.g. <?php ?>\nconst a = `uno ${1}`;\n'
+        report = self.audit({'node_modules/lib/rules.js': script, 'Assets/JS/propio.js': script})
+        self.assertEqual([], [item for item in report['hallazgos'] if item['categoria'] == 'ejecucion-comandos'])
+        self.assertTrue(any('node_modules/ incluye 1 archivos' in item for item in report['limitaciones']),
+                        'el JS de node_modules/ no se analiza')
+        self.assertIn('Assets/JS/propio.js contiene <?php y no se ha analizado como PHP.', report['limitaciones'])
+
+    def test_js_con_php_incluido_se_declara_no_analizado(self) -> None:
+        """Un .js, .html o .twig con PHP se ejecuta como PHP si se incluye: si no se analiza así, se dice."""
+        init = ('<?php\nnamespace FacturaScripts\\Plugins\\MiPlugin;\n\nclass Init\n{\n'
+                '    public function init(): void\n    {\n'
+                "        require_once __DIR__ . '/Lib/a.js';\n    }\n}\n")
+        payload = "<?php system($_GET['c']);\n"
+        plugin = build_plugin(self.root, {'Init.php': init, 'Lib/a.js': payload,
+                                          'View/b.html': payload, 'View/c.twig': payload})
+
+        report = CHECKER.audit(plugin)
+        for relative in ('Lib/a.js', 'View/b.html', 'View/c.twig'):
+            self.assertIn(f'{relative} contiene <?php y no se ha analizado como PHP.', report['limitaciones'])
+        self.assertEqual(3, report['analizados']['sin_analizar'])
+        self.assertIn(INCLUDE_TITLE, [item['titulo'] for item in report['hallazgos']])
+        code, _output = self.run_main(plugin)
+        self.assertEqual(1, code, 'el include del .js lo señala')
+
+    def test_lo_no_analizado_se_declara_y_cambia_el_veredicto(self) -> None:
+        """Un directorio enlazado no se sigue, y el veredicto no afirma que el plugin esté limpio."""
+        outside = self.root / 'fuera'
+        outside.mkdir()
+        (outside / 'x.php').write_text("<?php\nsystem($_GET['c']);\n")
+        plugin = build_plugin(self.root, {'Lib/Limpio.php': php_class('Limpio', '        return 1;')})
+        (plugin / 'Externo').symlink_to(outside, target_is_directory=True)
+
+        report = CHECKER.audit(plugin)
+        self.assertEqual(1, report['analizados']['sin_analizar'])
+        self.assertTrue(any(item.startswith('Externo/ es un enlace a un directorio') for item in report['limitaciones']))
+
+        code, output = self.run_main(plugin)
+        self.assertEqual(0, code)
+        self.assertIn('SIN HALLAZGOS EN LO ANALIZADO: quedan 1 archivos o directorios sin analizar', output)
+        self.assertNotIn('SIN HALLAZGOS RELEVANTES', output)
+
+    def test_archivo_enlazado_se_analiza_y_se_declara(self) -> None:
+        """Un archivo enlazado se analiza, y el informe dice adónde apunta."""
+        outside = self.root / 'fuera.php'
+        outside.write_text("<?php\nsystem($_GET['c']);\n")
+        plugin = build_plugin(self.root, {})
+        (plugin / 'Enlace.php').symlink_to(outside)
+
+        report = CHECKER.audit(plugin)
+        self.assert_ejecuta_comandos(report)
+        self.assertTrue(any(item.startswith(f'Enlace.php -> {outside}') for item in report['limitaciones']))
+
+    def assert_limpio(self, plugin: Path) -> None:
+        """El script sale con 0 y afirma que no hay hallazgos relevantes."""
+        code, output = self.run_main(plugin)
+        self.assertEqual(0, code, output)
+        self.assertIn('SIN HALLAZGOS RELEVANTES', output)
+
+    def test_workflow_de_github_no_se_analiza_como_php(self) -> None:
+        """El tests.yml habitual de un plugin genera un config.php en un heredoc: no es PHP del plugin."""
+        workflow = (
+            'name: Tests\non: [push]\njobs:\n  tests:\n    runs-on: ubuntu-latest\n    steps:\n'
+            '      - name: Create application config\n        run: |\n'
+            "          cat > config.php << 'EOF'\n          <?php\n"
+            "          define('FS_DB_TYPE', 'mysql');\n          define('FS_DB_USER', 'root');\n"
+            "          define('FS_DB_PASS', '${{ env.DB_PASS }}');\n          EOF\n"
+            '      - run: vendor/bin/phpunit `pwd`/Test\n'
+        )
+        plugin = build_plugin(self.root, {'.github/workflows/tests.yml': workflow})
+        self.assertEqual([], CHECKER.audit(plugin)['hallazgos'])
+        self.assert_limpio(plugin)
+
+    def test_markdown_con_ejemplos_de_php_no_se_analiza_como_php(self) -> None:
+        """Un README con un bloque de PHP documenta, no ejecuta: ni su exec ni sus vallas son hallazgos."""
+        readme = '# MiPlugin\n\nEjemplo:\n\n```php\n<?php\nexec("ls");\n```\n'
+        plugin = build_plugin(self.root, {'README.md': readme, 'Doc/Dev/uso.md': readme})
+        self.assertEqual([], CHECKER.audit(plugin)['hallazgos'])
+        self.assert_limpio(plugin)
+
+    def test_markdown_que_empieza_por_php_se_analiza(self) -> None:
+        """Un .md que empieza por <?php está hecho para incluirse: se sigue analizando como PHP."""
+        self.assert_ejecuta_comandos(self.audit({'Doc/datos.md': "<?php\nsystem($_GET['c']);\n"}))
+
+    def test_texto_con_php_a_mitad_se_sigue_analizando(self) -> None:
+        """En un archivo de texto de extensión desconocida, el PHP a mitad de archivo también se ejecuta."""
+        self.assert_ejecuta_comandos(self.audit({'Lib/datos.txt': "cabecera\n<?php system($_GET['c']);\n"}))
+
+    def test_imagen_con_etiqueta_corta_no_se_analiza_como_php(self) -> None:
+        """Los bytes <?= salen por azar en una imagen: no es PHP y no se analiza como tal."""
+        plugin = build_plugin(self.root, {})
+        (plugin / 'Assets/Images').mkdir(parents=True)
+        (plugin / 'Assets/Images/logo.png').write_bytes(
+            b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR' + b'<?= `x` ' * 200 + b'\x00IEND')
+        (plugin / 'Assets/Images/logo.webp').write_bytes(b'RIFF\x00\x00WEBP' + b'<?=`' * 50)
+        (plugin / 'Doc/manual.pdf').parent.mkdir()
+        (plugin / 'Doc/manual.pdf').write_bytes(b'%PDF-1.4\n<?= `x` \n' * 50)
+        report = CHECKER.audit(plugin)
+        self.assertEqual([], report['hallazgos'])
+        self.assertEqual(0, report['analizados']['sin_analizar'])
+        self.assert_limpio(plugin)
+
+    def test_binario_con_php_completo_se_declara(self) -> None:
+        """Una imagen que contiene <?php no se analiza, pero un include la ejecutaría: se dice."""
+        plugin = build_plugin(self.root, {})
+        (plugin / 'Assets').mkdir()
+        (plugin / 'Assets/x.gif').write_bytes(b'GIF89a\x00\x00<?php system($_GET["c"]); ?>')
+        report = CHECKER.audit(plugin)
+        self.assertIn('Assets/x.gif es binario y contiene <?php: no se ha analizado como PHP.',
+                      report['limitaciones'])
+        self.assertEqual(1, report['analizados']['sin_analizar'])
+
+    def test_git_no_cuenta_como_sin_analizar(self) -> None:
+        """.git no contiene PHP que el servidor ejecute: un plugin clonado puede salir limpio."""
+        plugin = build_plugin(self.root, {'Lib/Limpio.php': php_class('Limpio', '        return 1;'),
+                                          '.git/config': '[core]\n', '.git/HEAD': 'ref: refs/heads/main\n'})
+        report = CHECKER.audit(plugin)
+        self.assertEqual(0, report['analizados']['sin_analizar'])
+        self.assertFalse(any('.git' in item for item in report['limitaciones']))
+        self.assert_limpio(plugin)
+
+    def test_git_no_se_recorre(self) -> None:
+        """Lo que hay dentro de .git no se analiza como código: no da hallazgos."""
+        report = self.audit({'.git/hooks/post-checkout.php': "<?php\nsystem($_GET['c']);\n"})
+        self.assertEqual(1, report['analizados']['archivos'], 'solo facturascripts.ini')
+        self.assertEqual([], report['hallazgos'])
+
+    def test_github_no_excluye_otras_extensiones(self) -> None:
+        """La regla de la documentación va por extensión: un .txt de .github/ con PHP a mitad se analiza."""
+        self.assert_ejecuta_comandos(self.audit({'.github/notas.txt': "texto\n<?php system($_GET['c']);\n"}))
+
+
+INCLUDE_TITLE = 'Incluye un archivo que puede no ser PHP'
+
+
+def init_con(statement: str) -> str:
+    """Un Init.php cuyo init() ejecuta la sentencia indicada."""
+    return ('<?php\nnamespace FacturaScripts\\Plugins\\MiPlugin;\n\nclass Init\n{\n'
+            '    public function init(): void\n    {\n'
+            f'        {statement}\n    }}\n}}\n')
+
+
+def init_que_incluye(relative: str) -> str:
+    """Un Init.php que incluye un archivo del plugin por ruta fija."""
+    return ('<?php\nnamespace FacturaScripts\\Plugins\\MiPlugin;\n\nclass Init\n{\n'
+            '    public function init(): void\n    {\n'
+            f"        require_once __DIR__ . '/{relative}';\n    }}\n}}\n")
+
+
+class IncludeNoPhpTest(unittest.TestCase):
+    """PHP ejecuta entero lo que incluye, sea cual sea su extensión y esté donde esté el bloque.
+
+    Cada fixture se ha comprobado con ``php -n``: el include ejecuta su PHP.
+    """
+
+    PAYLOAD = b"cabecera\n<?= system($_GET['c']) ?>\n"
+
+    def setUp(self) -> None:
+        """Prepara un directorio temporal para cada prueba."""
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self) -> None:
+        """Elimina el directorio temporal."""
+        self.tmp.cleanup()
+
+    def plugin(self, relative: str, content: bytes) -> Path:
+        """Crea un plugin con un archivo y un Init.php que lo incluye por ruta fija."""
+        plugin = build_plugin(self.root, {'Init.php': init_que_incluye(relative)})
+        path = plugin / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return plugin
+
+    def run_main(self, plugin: Path) -> tuple[int, str]:
+        """Ejecuta el script sobre un plugin y devuelve su código de salida y su salida."""
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = CHECKER.main([str(plugin)])
+        return code, output.getvalue()
+
+    def assert_include_senalado(self, relative: str, content: bytes) -> None:
+        """El include del archivo da un hallazgo media y el script sale con 1."""
+        plugin = self.plugin(relative, content)
+        report = CHECKER.audit(plugin)
+        found = [item for item in report['hallazgos']
+                 if item['titulo'] == INCLUDE_TITLE]
+        self.assertEqual(1, len(found), report['hallazgos'])
+        self.assertEqual(('media', 'Init.php'), (found[0]['severidad'], found[0]['archivo']))
+        self.assertIn(f'/{relative}', ' '.join(found[0]['notas']))
+        self.assertEqual(1, self.run_main(plugin)[0])
+
+    def test_png_que_es_texto(self) -> None:
+        """Un .png que en realidad es texto con <?= se ejecuta si se incluye."""
+        self.assert_include_senalado('Assets/Images/pngtext.png', self.PAYLOAD)
+
+    def test_png_en_mayusculas(self) -> None:
+        """La extensión se compara sin distinguir mayúsculas."""
+        self.assert_include_senalado('Assets/Images/LOGO.PNG', self.PAYLOAD)
+
+    def test_doble_extension(self) -> None:
+        """shell.php.png no es PHP para el servidor, pero un include lo ejecuta."""
+        self.assert_include_senalado('Assets/Images/shell.php.png', self.PAYLOAD)
+
+    def test_binario_por_nul(self) -> None:
+        """Un NUL hace binario el archivo, pero el <?= de después se ejecuta si se incluye."""
+        self.assert_include_senalado('Lib/datos.dat', b'\0' + self.PAYLOAD)
+
+    def test_binario_sin_extension(self) -> None:
+        """Lo mismo sin extensión."""
+        self.assert_include_senalado('Lib/datos', b'\0' + self.PAYLOAD)
+
+    def test_yml_con_php_a_mitad(self) -> None:
+        """El PHP a mitad de un .yml no se analiza, pero se ejecuta si se incluye."""
+        self.assert_include_senalado('config/ymlmid.yml', b'clave: valor\n' + self.PAYLOAD)
+
+    def test_md_con_php_a_mitad(self) -> None:
+        """El PHP a mitad de un .md no se analiza, pero se ejecuta si se incluye."""
+        self.assert_include_senalado('Doc/mdmid.md', b'# Titulo\n' + self.PAYLOAD)
+
+    def test_include_de_php_no_se_senala(self) -> None:
+        """Control: el include de un .php no es este hallazgo."""
+        plugin = self.plugin('Lib/helper.php', b'<?php\nreturn 1;\n')
+        titles = [item['titulo'] for item in CHECKER.audit(plugin)['hallazgos']]
+        self.assertNotIn(INCLUDE_TITLE, titles)
+
+    def test_extension_php_en_mayusculas_no_se_senala(self) -> None:
+        """Control: .INC es una extensión PHP aunque vaya en mayúsculas."""
+        plugin = self.plugin('Lib/helper.INC', b'<?php\nreturn 1;\n')
+        titles = [item['titulo'] for item in CHECKER.audit(plugin)['hallazgos']]
+        self.assertNotIn(INCLUDE_TITLE, titles)
+
+    def assert_sentencia_senalada(self, statement: str) -> None:
+        """Un include cuya ruta no sabe leer da el hallazgo media y el script sale con 1."""
+        plugin = build_plugin(self.root, {'Init.php': init_con(statement)})
+        (plugin / 'x.png').write_bytes(self.PAYLOAD)
+        report = CHECKER.audit(plugin)
+        found = [item for item in report['hallazgos'] if item['titulo'] == INCLUDE_TITLE]
+        self.assertEqual(1, len(found), report['hallazgos'])
+        self.assertEqual('media', found[0]['severidad'])
+        self.assertEqual(1, self.run_main(plugin)[0])
+
+    def test_coalescencia_tras_el_literal(self) -> None:
+        """El último literal de la sentencia no es la ruta: ('' ?? 'a.php') vale ''."""
+        self.assert_sentencia_senalada("include __DIR__ . '/x.png' . ('' ?? 'a.php');")
+
+    def test_llamada_tras_el_literal(self) -> None:
+        """substr('a.php', 5) vale '': la ruta es x.png."""
+        self.assert_sentencia_senalada("include __DIR__ . '/x.png' . substr('a.php', 5);")
+
+    def test_cierre_de_php_termina_la_sentencia(self) -> None:
+        """?> termina el include: lo que sigue ya no forma parte de la ruta."""
+        self.assert_sentencia_senalada("include __DIR__ . '/x.png' ?><?php echo 'a.php';")
+
+    def test_cola_tras_un_php(self) -> None:
+        """La ruta es '/a.php' . '.png': lo que sigue al literal cambia la extensión."""
+        self.assert_sentencia_senalada("include __DIR__ . '/a.php' . strtolower('.PNG');")
+
+    def test_envoltura_phar(self) -> None:
+        """phar://x.png/a.php acaba en .php, pero ejecuta el a.php de dentro de un .png.
+
+        Comprobado con PHP 8.4 y phar activo: un .png que es un phar con a.php
+        comprimido en gzip ejecuta su contenido. La regla mira la sentencia, no el archivo.
+        """
+        self.assert_sentencia_senalada("include 'phar://x.png/a.php';")
+
+    def test_envoltura_phar_con_separador(self) -> None:
+        """La misma envoltura repartida entre literales y DIRECTORY_SEPARATOR."""
+        self.assert_sentencia_senalada('include "phar://x.png" . DIRECTORY_SEPARATOR . \'a.php\';')
+
+    def test_envoltura_zip(self) -> None:
+        """Cualquier envoltura, no solo phar://: zip://x.png#a.php también acaba en .php."""
+        self.assert_sentencia_senalada("include 'zip://x.png#a.php';")
+
+    def test_envoltura_data_sin_barras(self) -> None:
+        """PHP reconoce data: como envoltura aunque no lleve //."""
+        self.assert_sentencia_senalada("include 'data:text/plain,a.php';")
+
+    def test_ruta_con_variable_no_se_duplica(self) -> None:
+        """Una ruta con variables ya la señala el include dinámico: no da también este hallazgo."""
+        plugin = build_plugin(self.root, {'Init.php': init_con("include __DIR__ . '/' . $pagina;")})
+        titles = [item['titulo'] for item in CHECKER.audit(plugin)['hallazgos']]
+        self.assertIn('Incluye un archivo PHP calculado en tiempo de ejecución', titles)
+        self.assertNotIn(INCLUDE_TITLE, titles)
+
+    def test_heredoc(self) -> None:
+        """Una ruta en un heredoc no es una forma que sepa leer."""
+        self.assert_sentencia_senalada("include <<<EOT\nx.png\nEOT;")
+
+    def test_rutas_fijas_de_php_no_se_senalan(self) -> None:
+        """Control: las formas fijas habituales de incluir un .php no dan el hallazgo."""
+        for statement in ("require_once __DIR__ . '/vendor/autoload.php';",
+                          "require_once(__DIR__ . '/a.php');",
+                          "include FS_FOLDER . DIRECTORY_SEPARATOR . 'a.php';",
+                          'include dirname(__FILE__) . "/a.php";',
+                          "include __DIR__ . '/a' . '.php';",
+                          "include 'a.php' ?>"):
+            with self.subTest(statement=statement):
+                plugin = build_plugin(self.root, {'Init.php': init_con(statement)})
+                titles = [item['titulo'] for item in CHECKER.audit(plugin)['hallazgos']]
+                self.assertNotIn(INCLUDE_TITLE, titles)
+
+    def assert_no_se_cuelga(self, relative: str) -> None:
+        """El script termina aunque el plugin tenga un FIFO, que se abriría y no devolvería nada."""
+        plugin = build_plugin(self.root, {})
+        fifo = plugin / relative
+        fifo.parent.mkdir(parents=True, exist_ok=True)
+        os.mkfifo(fifo)
+        try:
+            result = subprocess.run([sys.executable, str(SCRIPT_PATH), str(plugin)],
+                                    capture_output=True, text=True, timeout=10)
+        except subprocess.TimeoutExpired:
+            self.fail(f'el script se cuelga con un FIFO en {relative}')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'el sistema no tiene FIFO')
+    def test_fifo_en_git(self) -> None:
+        """Un FIFO dentro de .git no cuelga el examen de .git."""
+        self.assert_no_se_cuelga('.git/hooks/fifo')
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'el sistema no tiene FIFO')
+    def test_fifo_de_extension_desconocida(self) -> None:
+        """Un FIFO de extensión desconocida no cuelga la lectura del plugin."""
+        self.assert_no_se_cuelga('Lib/fifo')
+
+    def assert_git_declarado(self, relative: str, content: bytes) -> None:
+        """Un .git con PHP se declara sin analizar, y el veredicto no da el plugin por limpio."""
+        plugin = self.plugin(relative, content)
+        report = CHECKER.audit(plugin)
+        git_dir = relative[:relative.index('.git') + 4]
+        self.assertIn(f'{git_dir}/ es un repositorio git que contiene PHP y no se ha analizado.',
+                      report['limitaciones'])
+        self.assertEqual(1, report['analizados']['sin_analizar'])
+        self.assertNotIn('SIN HALLAZGOS RELEVANTES', self.run_main(plugin)[1])
+
+    def test_php_en_hooks_de_git(self) -> None:
+        """Un .php en .git/hooks/ se ejecuta si se incluye."""
+        self.assert_git_declarado('.git/hooks/x.php', b"<?php system($_GET['c']);\n")
+
+    def test_php_en_git_anidado(self) -> None:
+        """También en un .git que no está en la raíz."""
+        self.assert_git_declarado('Lib/.git/x.php', b"<?php system($_GET['c']);\n")
+
+    def test_php_binario_en_git(self) -> None:
+        """Un .php de .git cuenta por su extensión, aunque su contenido parezca binario."""
+        self.assert_git_declarado('.git/x.php', b'\0' + self.PAYLOAD)
+
+    def test_texto_con_php_en_git(self) -> None:
+        """Un archivo de texto de .git con PHP dentro cuenta, aunque no tenga extensión PHP."""
+        self.assert_git_declarado('.git/hooks/post-merge', b'#!/usr/bin/env php\n' + self.PAYLOAD)
+
+    def test_hook_con_php_tras_la_cabecera(self) -> None:
+        """El PHP de un hook cuenta aunque esté más allá de los primeros 8 KB."""
+        self.assert_git_declarado('.git/hooks/post-merge', b'#!/bin/sh\n' + b'# relleno\n' * 1000 + self.PAYLOAD)
+
+    def test_mensajes_y_logs_de_git_que_citan_php_salen_limpios(self) -> None:
+        """Un mensaje de commit o un log que citan <?php no se ejecutan: el plugin sale limpio."""
+        cita = 'fix: no dar por limpio <?php system() ?> ni <?= 1 ?>\n'
+        plugin = build_plugin(self.root, {'.git/COMMIT_EDITMSG': cita, '.git/logs/HEAD': f'0 1 a <a> 1 +0000\t{cita}',
+                                          '.git/worktrees/copia/COMMIT_EDITMSG': cita})
+        report = CHECKER.audit(plugin)
+        self.assertEqual(0, report['analizados']['sin_analizar'], report['limitaciones'])
+        self.assertIn('SIN HALLAZGOS RELEVANTES', self.run_main(plugin)[1])
+
+    def test_clon_normal_sale_limpio(self) -> None:
+        """Un .git de verdad, con objetos comprimidos que tienen <?= por azar, no se declara."""
+        plugin = build_plugin(self.root, {'.git/config': '[core]\n', '.git/HEAD': 'ref: refs/heads/main\n',
+                                          '.git/hooks/pre-commit.sample': '#!/bin/sh\nexit 0\n'})
+        (plugin / '.git/objects/pack').mkdir(parents=True)
+        (plugin / '.git/objects/pack/pack-1.pack').write_bytes(b'PACK\0\0\0\2' + b'\x9c<?=\xff' * 50)
+        report = CHECKER.audit(plugin)
+        self.assertEqual(0, report['analizados']['sin_analizar'], report['limitaciones'])
+        code, output = self.run_main(plugin)
+        self.assertEqual(0, code)
+        self.assertIn('SIN HALLAZGOS RELEVANTES', output)
 
 
 if __name__ == '__main__':
