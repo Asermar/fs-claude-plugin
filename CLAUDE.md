@@ -111,7 +111,7 @@ git diff --check
 
 # Este repo es el fork público de Asermar
 
-Este repo es el **fork público** de `FacturaScripts/fs-claude-plugin`. Su papel es uno y sólo uno:
+Este repo es el **fork público** de `FacturaScripts/fs-ai-plugin` (antes `fs-claude-plugin`; el nombre viejo redirige). Su papel es uno y sólo uno:
 **ser la cabecera desde la que se abren los PR a upstream.**
 
 La relación con las otras capas del MCP se documenta **por encima**, en `Tooling/fs-mcp/CLAUDE.md`;
