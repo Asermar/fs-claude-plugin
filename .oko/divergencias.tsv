@@ -22,9 +22,15 @@
 #
 # **Los commits de merge están exentos**: integran upstream, no aportan cambio propio.
 #
-# **Y también nuestra propia contabilidad.** Un commit que sólo toca `.oko/` o sólo la línea
-# `version` de un `plugin.json` no necesita declararse: es esta contabilidad y la línea de versión
-# propia, que ya están declaradas en la entrada `oko-inventario` con `-` en la columna de commits.
+# **Y también nuestra propia contabilidad.** No necesita declararse un commit que sólo toque esto:
+#
+#   .oko/              esta contabilidad
+#   CLAUDE.md          el del propio fork: documentación nuestra para agentes, no un cambio del
+#                      producto, y sin PR que abrir jamás (lo exime claude-dist desde 288883c)
+#   plugin.json        SÓLO su clave `version`, la línea de versión propia. Cualquier otra clave de un
+#                      plugin.json es un cambio del producto y sí se declara
+#
+# Ya están declarados en la entrada `oko-inventario` con `-` en la columna de commits.
 # Sin esta exención el inventario crecería una línea por cada mantenimiento de sí mismo, y la
 # comprobación de cobertura no dejaría de protestar nunca.
 #
@@ -77,5 +83,5 @@ auditor-techo	19a0a408a4c9	https://github.com/FacturaScripts/fs-claude-plugin/pu
 auditor-require	16b8b81572f6	https://github.com/FacturaScripts/fs-claude-plugin/pull/17	retirado	fs-dev	16b8b81572f6	check-min-version.py audita de forma recursiva los plugins declarados en require (buscados en --plugins-dir como hace el core) e informa del mínimo y el techo efectivos de la cadena y de qué plugin fija cada uno, en campos nuevos; el resultado y min_version_calculado no cambian. RETIRADO: aceptado en upstream en #17 (fusionado el 2026-10-19 sin retocar: su commit de cabeza está en upstream/main); el fork queda idéntico a upstream en este código
 mcp-vigencia	3985e4971d55,82af32e85504	https://github.com/FacturaScripts/fs-claude-plugin/pull/16	retirado	fs-mcp	3985e4971d55,82af32e85504	describe_model enseña desde qué versión y hasta cuál existe cada modelo y cada columna, referidos al plugin o al core que la aporta, con las retiradas conservadas aparte; el generador lo calcula recorriendo los tags y comparando versiones como decimales, y lo que no tiene historial sale como rango desconocido. RETIRADO: aceptado en upstream en #16 (fusionado el 2026-11-10 sin retocar: su commit de cabeza está en upstream/main); el fork queda idéntico a upstream en este código
 auditor-homonimos	18a5474eb93f	https://github.com/FacturaScripts/fs-claude-plugin/pull/18	retirado	fs-dev	18a5474eb93f	check-min-version.py no da por existente una clase porque otra del mismo nombre corto exista en otra carpeta de Core/ (Core\Template\JoinModel casaba con Core\Model\Base\JoinModel): las clases y las clases extendidas no se buscan fuera de su archivo, y Extension/Controller/EditController y ListController se datan por el case de InitClass que las atiende. RETIRADO: aceptado en upstream en #18 (fusionado el 2026-10-19 sin retocar: su commit de cabeza está en upstream/main); el fork queda idéntico a upstream en este código
-check-security-interpolacion	b083ecd2a42a,01bf6d6b0657,eae0c302d7e3,7fdc250f2882,37f3f8e0f919,09d1d0b3d6c4,6f8b9c41e90a,47c80ddd0c6e,26a8a93d6e3e	https://github.com/FacturaScripts/fs-claude-plugin/pull/34	vigente	fs-dev	pendiente	check-security.py analiza como código lo que va entre {$…} y ${…} dentro de comillas dobles, heredoc y comillas invertidas, en vez de tomarlo por texto; y el cierre de cada heredoc se busca con un índice de una sola pasada, sin coste cuadrático con heredocs anidados o sin cierre
+check-security-interpolacion	b083ecd2a42a,01bf6d6b0657,eae0c302d7e3,7fdc250f2882,37f3f8e0f919,09d1d0b3d6c4,6f8b9c41e90a,47c80ddd0c6e,26a8a93d6e3e	https://github.com/FacturaScripts/fs-claude-plugin/pull/34	retirado	fs-dev	pendiente	check-security.py analiza como código lo que va entre {$…} y ${…} dentro de comillas dobles, heredoc y comillas invertidas, en vez de tomarlo por texto; y el cierre de cada heredoc se busca con un índice de una sola pasada, sin coste cuadrático con heredocs anidados o sin cierre. RETIRADO: aceptado en upstream en #34 (fusionado el 2026-11-24 sin retocar: 553a08c tiene como segundo padre nuestra 26a8a93); el fork queda idéntico a upstream en este código
 oko-inventario	-	-	permanente	fs-dev,fs-user,fs-mcp	-	este inventario y la línea de versión propia: son nuestros por definición y no tienen PR que abrir
