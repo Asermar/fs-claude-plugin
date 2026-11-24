@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import fs from "fs";
-import os from "os";
 import path from "path";
+import { resolveConfigPath } from "./utils/configPath.js";
 import type {
   ConnectionConfig,
   ConnectionsConfig,
@@ -56,7 +56,8 @@ function describeError(error: unknown): string {
  * Lee y persiste configuración desde/hacia archivo JSON
  *
  * Prioridad de ubicación:
- * 1. ~/.fs-claude.json (automático, cross-platform, sin configuración necesaria)
+ * 1. ~/.fs-ai.json (automático, cross-platform, sin configuración necesaria), o el antiguo ~/.fs-claude.json
+ *    mientras sea el único que existe
  * 2. FS_CONNECTIONS_FILE env var (compatibilidad con configuraciones existentes)
  */
 class ConnectionManager {
@@ -65,8 +66,8 @@ class ConnectionManager {
   private config: ConnectionsConfig;
 
   constructor() {
-    // Prioridad 1: ~/.fs-claude.json — encontrado automáticamente en cualquier SO
-    const fsClaudePath = path.join(os.homedir(), ".fs-claude.json");
+    // Prioridad 1: ~/.fs-ai.json (o el antiguo ~/.fs-claude.json si es el único) — encontrado automáticamente en cualquier SO
+    const fsClaudePath = resolveConfigPath();
 
     // Prioridad 2: FS_CONNECTIONS_FILE env var (ignorar placeholders sin expandir)
     const rawConnectionsFile = process.env.FS_CONNECTIONS_FILE;
@@ -110,7 +111,7 @@ class ConnectionManager {
       const rawData = fs.readFileSync(this.connectionsPath, "utf-8");
       const parsed = JSON.parse(rawData);
 
-      // Formato ~/.fs-claude.json: las conexiones están en la clave "connections"
+      // Formato ~/.fs-ai.json: las conexiones están en la clave "connections"
       const connectionsData: ConnectionsConfig = this.useFsClaudeFormat
         ? (parsed as FsClaudeConfig).connections ?? emptyConfig
         : (parsed as ConnectionsConfig);
@@ -210,7 +211,7 @@ class ConnectionManager {
     };
 
     if (this.useFsClaudeFormat) {
-      // Crear ~/.fs-claude.json con estructura completa
+      // Crear ~/.fs-ai.json con estructura completa
       const fsClaudeConfig: FsClaudeConfig = {
         version: "1.0",
         connections: { default: "", connections: {} },
@@ -407,18 +408,6 @@ class ConnectionManager {
   }
 
   /**
-   * Devuelve la clave de la primera conexión configurada de un tipo concreto.
-   * Las conexiones sin `type` se consideran de tipo `api`.
-   * @param type - Tipo de conexión buscado
-   * @returns Clave de la conexión o undefined si no hay ninguna de ese tipo
-   */
-  findFirstKeyByType(type: ConnectionType): string | undefined {
-    return Object.entries(this.config.connections).find(
-      ([, config]) => (config.type ?? "api") === type
-    )?.[0];
-  }
-
-  /**
    * Añade una conexión o, si se indica `overwrite`, sustituye la que tenga la misma clave.
    * La URL se guarda normalizada con `normalizeBaseUrl`.
    * @param key - Identificador único de la conexión
@@ -444,10 +433,15 @@ class ConnectionManager {
       );
     }
 
-    if (config.type !== undefined && config.type !== "api" && config.type !== "forja") {
+    // Las conexiones de tipo forja (API de autor de facturascripts.com) son del plugin fs-forja
+    if (config.type === "forja") {
       throw new Error(
-        `Tipo de conexión no válido: "${String(config.type)}". Usa "api" o "forja".`
+        "Las conexiones de tipo forja las gestiona el plugin fs-forja: añádela con su herramienta " +
+          "forja_add_connection o con la skill fs-forja:add-connection."
       );
+    }
+    if (config.type !== undefined && config.type !== "api") {
+      throw new Error(`Tipo de conexión no válido: "${String(config.type)}". fs-mcp solo admite "api".`);
     }
 
     // Se guarda antes de aplicarlo: si no se puede guardar, la sesión sigue
@@ -458,6 +452,13 @@ class ConnectionManager {
       // (otro proceso la añadió, o el archivo no se pudo leer al arrancar y se corrigió después). Sólo cuentan
       // las claves propias del mapa: "toString" no es una conexión existente aunque lo herede de Object.prototype.
       const existing = Object.hasOwn(current.connections, key) ? current.connections[key] : undefined;
+      if (existing && existing.type === "forja") {
+        // Una conexión de tipo forja es de fs-forja: fs-mcp nunca la sustituye, ni con overwrite
+        throw new Error(
+          `Ya existe una conexión de tipo forja con la clave "${key}" (${existing.name}, ${existing.url}), ` +
+            "que gestiona el plugin fs-forja. Usa otra clave."
+        );
+      }
       if (existing && !overwrite) {
         throw new Error(
           `Ya existe una conexión con la clave "${key}" (${existing.name}, tipo ${existing.type ?? "api"}, ${existing.url}). ` +
@@ -489,6 +490,12 @@ class ConnectionManager {
       if (!Object.hasOwn(current.connections, key)) {
         throw new Error(
           `No se puede establecer como predeterminada: conexión "${key}" no existe`
+        );
+      }
+      if (current.connections[key]?.type === "forja") {
+        throw new Error(
+          `No se puede establecer como predeterminada: "${key}" es una conexión de tipo forja, del plugin fs-forja. ` +
+            "La conexión por defecto debe ser de tipo api."
         );
       }
 

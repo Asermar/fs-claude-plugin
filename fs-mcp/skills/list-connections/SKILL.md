@@ -13,7 +13,6 @@ Obtiene un resumen de todas tus conexiones con los detalles principales:
 - **Clave**: Identificador único de la conexión
 - **Nombre**: Descripción legible
 - **URL**: Dirección del servidor FacturaScripts
-- **Tipo**: `api` (API REST de una instalación) o `forja` (API de autor de facturascripts.com)
 - **Estado**: Indica cuál es la conexión por defecto
 
 ## Información que Obtendrás
@@ -21,14 +20,13 @@ Obtiene un resumen de todas tus conexiones con los detalles principales:
 El skill mostrará una tabla con este formato:
 
 ```
-CLAVE              | NOMBRE                   | URL                          | TIPO  | POR DEFECTO
--------------------|--------------------------|------------------------------|-------|-----------
-empresa-principal  | FacturaScripts Principal | https://fs.empresa.com       | api   | ✓
-empresa-secundaria | FacturaScripts Demo      | https://fs-demo.empresa.com  | api   |
-forja-autor        | Forja (autor)            | https://facturascripts.com   | forja |
+CLAVE              | NOMBRE                   | URL                          | POR DEFECTO
+-------------------|--------------------------|------------------------------|-----------
+empresa-principal  | FacturaScripts Principal | https://fs.empresa.com       | ✓
+empresa-secundaria | FacturaScripts Demo      | https://fs-demo.empresa.com  |
 ```
 
-Si se lee el archivo directamente, una conexión sin el campo `type` es de tipo `api`. No muestres nunca los tokens.
+No muestres nunca los tokens. El archivo `~/.fs-ai.json` también puede guardar conexiones de tipo `forja` (las que tienen `"type": "forja"`): son del plugin **fs-forja**, que las lista con `forja_list_connections`. No las muestres en esta tabla; como mucho, indica cuántas hay y que las gestiona fs-forja. Si se lee el archivo directamente, una conexión sin el campo `type` es de fs-mcp.
 
 ## Casos Posibles
 
@@ -55,7 +53,7 @@ Verás un listado completo de todas tus conexiones, marcando cuál es la predete
 - **CLAVE**: Usarla para especificar qué conexión usar en operaciones específicas
 - **NOMBRE**: La descripción que configuraste
 - **URL**: Valida que apunta al servidor correcto
-- **TIPO**: las conexiones `api` las usan las herramientas de datos del ERP (`get_*`, `create_*`...); las `forja` solo las usan las herramientas `forja_*`, que por defecto toman la primera conexión de tipo forja. Si la conexión por defecto es de tipo `forja`, recomienda cambiarla a una `api` con `set_default_connection`
+- Si la conexión por defecto del archivo es de tipo `forja` (de una versión antigua), recomienda cambiarla a una conexión del ERP con `set_default_connection`: las herramientas de datos rechazan las conexiones de tipo forja
 - **POR DEFECTO**: Si ves la marca aquí, es la conexión que se usará automáticamente
 
 ## Casos de Uso
@@ -74,7 +72,7 @@ Si necesitas cambiar cuál es la conexión por defecto, puedes:
 
 ## Flujo de Ejecución
 
-1. La skill consultará el archivo unificado `~/.fs-claude.json`
+1. La skill consultará el archivo unificado `~/.fs-ai.json`
 2. Si el MCP está disponible, usará la herramienta `list_connections`
 3. Si no está disponible, leerá el archivo directamente
 4. Mostrará los resultados en formato tabla
@@ -87,6 +85,6 @@ Según lo que veas:
 - **Si hay conexiones**: Puedes empezar a usar el MCP con todos sus endpoints
 - **Si no hay conexiones**: Usa `fs-mcp:add-connection` para crear una
 - **Si quieres cambiar la predeterminada**: Anota la clave y contacta al administrador del MCP
-- **Si tienes problemas**: verifica que existe `~/.fs-claude.json`, que su JSON es válido y que contiene la sección `connections`
+- **Si tienes problemas**: verifica que existe `~/.fs-ai.json`, que su JSON es válido y que contiene la sección `connections`
 
 ¿Quieres ejecutar este skill? Te mostraré todas tus conexiones configuradas.
