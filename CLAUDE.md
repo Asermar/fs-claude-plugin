@@ -229,7 +229,10 @@ Dos reglas que se olvidan:
 - **Sólo se declara lo que no se puede deducir.** El estado del PR es observable y lo lee la
   máquina; copiarlo aquí sería un espejo que envejece.
 - **La unidad es la divergencia, no el commit**: una puede ocupar varios, y por eso `commits` es una
-  lista. Los merges y lo que sólo toca `.oko/` o la línea `version` están **exentos**.
+  lista. La cobertura se mide **por fichero**: cada fichero que difiere de la base del último merge
+  con upstream necesita declarados todos los commits que lo traen, incluido el merge cuya resolución
+  difiere de la automática. Sólo están **exentos** `.oko/`, este `CLAUDE.md` y la línea `version` de
+  un `plugin.json` (también el merge cuya resolución de ese fichero sólo toca esa línea).
 
 Y una columna que no es de este repo pero vive aquí: **el SHA correspondiente en el duplicado
 privado**. Existe porque un parche puede haberse *adaptado* al integrarlo allí, y entonces su

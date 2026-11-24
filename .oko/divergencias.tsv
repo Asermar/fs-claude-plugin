@@ -17,17 +17,30 @@
 #
 # Una divergencia puede ocupar varios commits: la de la ruta de la documentación son dos —el
 # primer intento con ruta absoluta y el refactor a ${CLAUDE_PLUGIN_ROOT}—. Por eso `commits` es
-# una lista, y la comprobación de cobertura es que la unión de lo declarado cubra todos los
-# commits de `upstream/main..main`.
+# una lista.
 #
-# **Los commits de merge están exentos**: integran upstream, no aportan cambio propio.
+# ## La cobertura se mide por FICHERO, no por commit
 #
-# **Y también nuestra propia contabilidad.** No necesita declararse un commit que sólo toque esto:
+# La comprobación (`claude-dist plugins fork`, desde la v3.16.1) parte de la BASE: lo último de
+# upstream que hemos integrado, `git merge-base upstream/main main`, y no la punta viva de
+# upstream. La divergencia son los ficheros que difieren entre esa base y `main`. Un fichero que
+# queda igual que upstream no pide nada, aunque algún commit lo tocara por el camino.
+#
+# Cada fichero que diverge necesita declarados (o exentos) TODOS los commits que lo traen: los
+# commits normales de `base..main` que lo tocan, y los merges cuya resolución en ese fichero
+# difiere del merge automático (`git show --remerge-diff`). Un merge así se declara en `commits`
+# como cualquier otro commit: **ser un merge no lo exime**. Basta que uno de esos commits falte
+# para que el fichero salga «SIN DECLARAR».
+#
+# **Exenta: nuestra propia contabilidad.** No pide declaración ni como fichero ni como commit:
 #
 #   .oko/              esta contabilidad
 #   CLAUDE.md          el del propio fork: documentación nuestra para agentes, no un cambio del
 #                      producto, y sin PR que abrir jamás (lo exime claude-dist desde 288883c)
-#   plugin.json        SÓLO su clave `version`, la línea de versión propia. Cualquier otra clave de un
+#   plugin.json        SÓLO su clave `version`, la línea de versión propia: un plugin.json que sólo
+#                      difiere de la base en `version` no diverge, y están exentos el commit que
+#                      sólo cambia esa clave y el merge cuya resolución de ese fichero sólo toca esa
+#                      línea (el conflicto de cada merge de upstream). Cualquier otra clave de un
 #                      plugin.json es un cambio del producto y sí se declara
 #
 # Ya están declarados en la entrada `oko-inventario` con `-` en la columna de commits.
