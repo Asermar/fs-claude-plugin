@@ -29,6 +29,6 @@
 #
 # plugin	upstream	nuestra
 fs-dev	1.13.0	2.8.0
-fs-user	1.6.0	2.3.0
-fs-mcp	2.3.0	2.9.0
+fs-user	1.6.1	2.4.0
+fs-mcp	2.4.0	2.10.0
 fs-forja	1.1.1	2.0.0
