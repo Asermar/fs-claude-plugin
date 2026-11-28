@@ -1,6 +1,6 @@
 ---
 name: crear-documentacion
-description: Crea o completa la estructura de documentación de un plugin o del core de FacturaScripts (Doc/User, Doc/Dev, Doc/Context, Doc/Assets, Doc/forja.json, AGENTS.md, CLAUDE.md y .gitignore).
+description: Crea o completa la estructura de documentación de un plugin o del core de FacturaScripts (Doc/User, Doc/Dev, Doc/Context, Doc/Assets, Doc/forja.json, AGENTS.md, CLAUDE.md y .gitignore) y, si Doc/Context está vacío, lo rellena a partir del historial git y del código.
 ---
 
 # Skill: Estructura de documentación de FacturaScripts
@@ -29,8 +29,9 @@ Es la de los plugins fiscales (FiscalES, Facturae, InformeSII, Ticketbai y Verif
 
 - `Doc/Context/` se puede dividir en tantos archivos y subcarpetas como haga falta (por ejemplo `NN-tema.md` y
   `Decisiones/NNNN-titulo.md`); su `README.md` hace de índice y se actualiza en el mismo trabajo que cambia el código.
-- `Doc/forja.json` lo lee la forja de facturascripts.com al subir el plugin o el core para dar de alta la
-  documentación. Su formato está en la sección [`Doc/forja.json`](#docforjajson).
+- `Doc/forja.json` guarda los datos con los que se publica cada página de `Doc/User` y `Doc/Dev` en la forja de
+  facturascripts.com, y el id de su publicación. Su formato está en la sección [`Doc/forja.json`](#docforjajson) y la
+  publicación, en [Publicación en la forja](#publicación-en-la-forja).
 - Las carpetas vacías llevan un `.gitkeep` para que git las suba. No lo añadas a carpetas que ya tienen archivos.
 - `AGENTS.md` es el archivo de instrucciones para los agentes (Codex lo lee directamente) y es corto: qué es el plugin
   en una o dos frases, el enlace a `Doc/Context/README.md` y la tabla de `Doc/`. `CLAUDE.md` solo lo importa con
@@ -84,18 +85,34 @@ Todos los campos son opcionales. Las longitudes máximas se cuentan en caractere
 
 | Campo | Tipo | Qué indica |
 |---|---|---|
-| `title` | texto | Título de la página; si falta, se usa el nombre del archivo `.md` formateado |
-| `title_short` | texto | Título corto para SEO; si falta, se usa el nombre del archivo `.md` formateado |
-| `permalink` | texto, máx. 200 | Enlace de la página en la web. Si ya existe, la forja le añade algo para hacerlo único al crear la página; después no se puede cambiar |
-| `parent` | texto | Página padre, por su nombre de archivo en la misma sección |
+| `title` | texto, máx. 200 | Título de la página; obligatorio para publicarla |
+| `title_short` | texto, máx. 100 | Título corto para SEO; si falta, la forja recorta el título |
+| `permalink` | texto, máx. 200 | Enlace de la página en la web. La forja lo genera a partir del título al crear la publicación y la API no lo cambia: solo es informativo |
+| `parent` | texto | Página padre, por su **nombre de archivo con `.md`** en la misma sección (`inicio.md`, no su permalink) |
 | `ordernum` | número entero | Orden de la página |
 | `youtubeid` | texto | Vídeo de YouTube de la página |
-| `imageurl` | texto | Imagen principal: una URL o un archivo de `Doc/Assets/` |
-| `icon` | texto | Icono de Font Awesome |
+| `imageurl` | texto | Imagen principal: una URL o un archivo de `Doc/Assets/`. La API no la cambia: se pone desde la web |
+| `icon` | texto, máx. 50 | Icono de Font Awesome |
 | `color` | texto | Color de Bootstrap: `primary`, `secondary`, `success`, `danger`, `warning`, `info` o `dark` |
 | `keywords` | texto, máx. 300 | Palabras clave para buscar la página, separadas por comas |
-| `controllers` | texto, máx. 300 | Controladores donde se muestra la página, separados por comas |
-| `visibility` | `true` o `false` | Si la página es visible |
+| `controllers` | texto, máx. 300 | Controladores donde se muestra la página, separados por comas y sin espacios (`ListFacturaCliente,EditFacturaCliente`) |
+| `visibility` | `true` o `false` | Si la página es visible; es un booleano JSON sin comillas, nunca un texto como `"public"`. La API no la cambia: se cambia desde la web |
+| `idpublication` | número entero | Id de la publicación en la forja. Lo escribe `forja_publish_doc_page` al publicar la página; no lo cambies a mano |
+| `assets` | objeto | Imágenes de la página ya subidas a la forja (`{"Assets/x.png": {"url": ..., "sha256": ...}}`). Lo escribe `forja_publish_doc_page` para no volver a subirlas |
+
+## Publicación en la forja
+
+- Cada página de `Doc/User` y `Doc/Dev` es una **publicación** de la forja (de tipo `user` o `dev`). La forja **no
+  importa** la carpeta `Doc/` del zip de una versión: `forja_build_zip` del plugin fs-forja la deja fuera del zip, y las páginas
+  se publican una a una con `forja_publish_doc_page`, siguiendo la skill `fs-dev:sincronizar-forja`.
+- `forja_publish_doc_page` envía los datos de la entrada de `forja.json`, sube las imágenes de `Doc/Assets` que enlaza
+  la página y las coloca en su sitio, cambia los enlaces a otras páginas publicadas por su ruta en la web
+  (`/publicaciones/...`) y guarda en la entrada el `idpublication` y las imágenes subidas (`assets`). Versiona `Doc/forja.json` con las páginas: sin
+  `idpublication`, la página se publicaría otra vez como nueva.
+- Una página con `parent` se publica después que su padre. Los enlaces a páginas aún sin publicar se dejan como
+  están: cuando estén todas publicadas, se vuelve a publicar la página que las enlaza.
+- La web rechaza las páginas sin `title` o con menos de 300 caracteres de cuerpo: `forja_publish_doc_page` lo
+  comprueba antes de enviar nada.
 
 ## Script
 
@@ -118,6 +135,8 @@ python3 "<scripts>/create-doc-structure.py" "<ruta del plugin o del core>"
 - En `Doc/forja.json` añade las secciones `User` y `Dev` que falten y valida las páginas: que existan en su carpeta,
   que los campos y tipos sean los de la tabla, las longitudes máximas, el color y que exista la página padre.
 - Termina con código 1 si deja tareas **pendientes** que no resuelve solo.
+- Indica si `Doc/Context` está vacío (sin más archivos que el `README.md` de la plantilla): en el texto, con una línea
+  final, y en `--json`, con `context_empty`. No es un pendiente y no cambia el código de salida.
 
 ## Pasos
 
@@ -139,10 +158,16 @@ python3 "<scripts>/create-doc-structure.py" "<ruta del plugin o del core>"
 5. Si el script creó `AGENTS.md`, revisa su primera frase: debe decir en una o dos frases qué hace el plugin. Tómalo
    del `README.md`, del `facturascripts.ini` o del código, y no lo alargues: el detalle va en `Doc/`.
 6. Repite el script con `--check` para confirmar que la estructura queda completa y resume los cambios.
+7. **Rellena el contexto si está vacío.** Si el informe dice que `Doc/Context` está vacío (`context_empty` en
+   `--json`), que es lo normal la primera vez que se crea la estructura, sigue sin esperar a que el usuario lo pida
+   con la skill `fs-dev:context-writer`: lee el historial git del más antiguo al más nuevo y el código, escribe
+   `Doc/Context/` y completa los docblocks que faltan sin cambiar el código. Sáltatelo solo si el usuario ha pedido
+   expresamente únicamente la estructura, o si el plugin no tiene todavía código ni commits (un plugin recién
+   creado): entonces dilo en el resumen. En el core, `context-writer` no añade docblocks salvo que el usuario lo pida.
 
-No escribas páginas de `Doc/User`, `Doc/Dev` o `Doc/Context` ni rellenes `forja.json` salvo que el usuario lo pida.
-Para escribir una página de `Doc/User` o `Doc/Dev` con sus capturas, usa la skill `fs-dev:docs-writer`. No hagas
-commits.
+No escribas páginas de `Doc/User` o `Doc/Dev` ni rellenes `forja.json` salvo que el usuario lo pida.
+Para escribir una página de `Doc/User` o `Doc/Dev` con sus capturas, usa la skill `fs-dev:docs-writer`, y para
+bajarla o subirla a la forja, `fs-dev:sincronizar-forja`. No hagas commits.
 
 ## Alternativa con fsmaker
 

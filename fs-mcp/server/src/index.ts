@@ -24,11 +24,13 @@ import { registerCommunicationTools, handleCommunicationTool } from './modules/c
 import { registerSystemTools, handleSystemTool } from './modules/system/index.js';
 import { registerAnalyticsTools, handleAnalyticsTool } from './modules/analytics/index.js';
 import { registerSchemaTools, handleSchemaTool } from './modules/schema/index.js';
+import { fsClient } from './fs/client.js';
 import { listSchemaResources, readSchemaResource } from './resources/schema-resources.js';
 import { addDateRangeParams } from './metadata/dateRange.js';
 import { enrichAllTools } from './metadata/enrich.js';
 import { bootstrapCoreMetadata, getAllModelMetadata } from './metadata/registry.js';
 import { loadLocalModules, type LocalModuleHandler } from './local-loader.js';
+import { handleOfficialPluginTool, registerOfficialPluginTools } from './plugins/index.js';
 import { validateToolInput } from './utils/validateInput.js';
 
 // Track registered tools
@@ -61,7 +63,8 @@ function registerConnectionTools(): void {
   const addConnectionTool: Tool = {
     name: 'add_connection',
     description:
-      'Add a new FacturaScripts server connection. Use this to connect to a FacturaScripts instance.',
+      'Add a new FacturaScripts server connection. Use this to connect to a FacturaScripts instance (REST API /api/3). ' +
+      'Author tokens of the facturascripts.com Forja API are not managed here: use the fs-forja plugin (forja_add_connection).',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -75,11 +78,18 @@ function registerConnectionTools(): void {
         },
         url: {
           type: 'string',
-          description: 'Base URL of the FacturaScripts instance (e.g., https://facturascripts.example.com)',
+          description:
+            'Base URL of the FacturaScripts instance (e.g., https://facturascripts.example.com). ' +
+            'A trailing /api/3 is removed',
         },
         token: {
           type: 'string',
           description: 'API token for authentication',
+        },
+        rejectUnauthorized: {
+          type: 'boolean',
+          description:
+            'Set to false to accept self-signed or unverifiable HTTPS certificates (local installations only)',
         },
         version: {
           type: 'string',
@@ -90,6 +100,12 @@ function registerConnectionTools(): void {
           type: 'boolean',
           description:
             'Set this connection as the default one for subsequent requests',
+        },
+        overwrite: {
+          type: 'boolean',
+          description:
+            'Replace an existing connection with the same key (default false: adding an existing key fails). ' +
+            'Only after the user confirms, because the old token is lost',
         },
       },
       required: ['key', 'name', 'url', 'token'],
@@ -153,14 +169,29 @@ async function registerAllTools(): Promise<void> {
   await registerSystemTools(tools);
   await registerAnalyticsTools(tools);
 
-  // Tools del core, ANTES de cargar las locales: solo a éstas se les inyectan los
-  // filtros de rango de fecha (paso 8), porque son las únicas cuyos handlers los
-  // reenvían. Los módulos locales ya ofrecen rangos por su propio parámetro `filter`.
+  // 3b. Plugins oficiales de FacturaScripts (src/plugins): registran la metadata
+  // de sus modelos y sus tools, separados de los módulos del core.
+  registerOfficialPluginTools(tools);
+
+  // Tools del core y de los plugins oficiales, ANTES de cargar las locales: solo
+  // a éstas se les inyectan los filtros de rango de fecha (paso 8), porque son las
+  // únicas cuyos handlers los reenvían. Los módulos locales ya ofrecen rangos por
+  // su propio parámetro `filter`.
   const coreToolNames = new Set(tools.keys());
+  const builtInTools = new Map(tools);
 
   // 4. Cargar módulos locales privados: registran sus tools y, si los exponen,
   // sus modelos en el registry de metadata.
   localModuleHandlers = await loadLocalModules(tools);
+
+  // Un módulo local no puede sustituir una tool del servidor: su handler nunca se
+  // llamaría (se despacha antes a los del servidor) y el esquema no casaría.
+  for (const [name, tool] of builtInTools) {
+    if (tools.get(name) !== tool) {
+      console.error(`[fs-mcp] Un módulo local redefine la tool ${name}; se conserva la del servidor.`);
+      tools.set(name, tool);
+    }
+  }
 
   // 5. Tools del schema (describe_model, list_models, verify_model_columns):
   // se construyen DESPUÉS de cargar locales para que sus enums incluyan tanto
@@ -253,23 +284,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (toolName) {
       case 'add_connection': {
-        const { key, name, url, token, version, setAsDefault } = toolInput as {
+        const { key, name, url, token, version, rejectUnauthorized, setAsDefault, overwrite } = toolInput as {
           key: string;
           name: string;
           url: string;
           token: string;
           version?: string;
+          rejectUnauthorized?: boolean | '1' | '0';
           setAsDefault?: boolean | '1' | '0';
+          overwrite?: boolean | '1' | '0';
         };
-        // La validación acepta "1" y "0" como booleanos, y "0" es verdadero en JS
-        const makeDefault = setAsDefault === true || setAsDefault === '1';
+        // La validación acepta "1" y "0" como booleanos, y "0" es verdadero en JS:
+        // solo true y "1" cuentan como verdadero
+        const isTrue = (value: unknown): boolean => value === true || value === '1';
+        const makeDefault = isTrue(setAsDefault);
+        const replace = isTrue(overwrite);
 
         connectionManager.addConnection(key, {
           name,
           url,
           token,
           ...(version ? { version } : {}),
-        });
+          ...(rejectUnauthorized !== undefined ? { rejectUnauthorized: isTrue(rejectUnauthorized) } : {}),
+        }, replace);
+
+        // Al sustituir una conexión existente, las instancias de axios cacheadas quedarían obsoletas.
+        fsClient.clearCache();
 
         if (makeDefault) {
           connectionManager.setDefault(key);
@@ -279,7 +319,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text' as const,
-              text: `Connection "${name}" (${key}) added successfully${
+              text: `Connection "${name}" (${key}, ${connectionManager.getConnection(key).url}) ${
+                replace ? 'saved' : 'added'
+              } successfully${
                 makeDefault ? ' and set as default' : ''
               }`,
             },
@@ -288,14 +330,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'list_connections': {
-        const connections = connectionManager.listConnections();
+        // Las conexiones de tipo forja comparten el archivo, pero son del plugin fs-forja
+        const allConnections = connectionManager.listConnections();
+        const connections = allConnections.filter((conn) => conn.type === 'api');
+        const forjaCount = allConnections.length - connections.length;
+        const forjaNote = forjaCount > 0
+          ? `\n\n${forjaCount} connection(s) of type forja in the same file are managed by the fs-forja plugin (forja_list_connections).`
+          : '';
 
         if (connections.length === 0) {
           return {
             content: [
               {
                 type: 'text' as const,
-                text: 'No connections configured. Use add_connection to add one.',
+                text: `No connections configured. Use add_connection to add one.${forjaNote}`,
               },
             ],
           };
@@ -312,7 +360,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text' as const,
-              text: `Configured connections:\n${connectionList}`,
+              text: `Configured connections:\n${connectionList}${forjaNote}`,
             },
           ],
         };
@@ -322,6 +370,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { key } = toolInput as { key: string };
 
         connectionManager.setDefault(key);
+        // La instancia cacheada como "default" apuntaba a la conexión anterior.
+        fsClient.clearCache();
 
         const conn = connectionManager.getConnection(key);
         return {
@@ -346,6 +396,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ?? await handleCommunicationTool(toolName, toolInput)
           ?? await handleSystemTool(toolName, toolInput)
           ?? await handleAnalyticsTool(toolName, toolInput)
+          ?? await handleOfficialPluginTool(toolName, toolInput)
           ?? await handleSchemaTool(toolName, toolInput);
 
         if (result) {

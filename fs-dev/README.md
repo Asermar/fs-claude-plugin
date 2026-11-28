@@ -24,7 +24,7 @@ Las skills se activan solas cuando la petición encaja con su descripción. Para
 | Skill | Descripción |
 |---|---|
 | `fs-dev:crear-plugin` | Crea la estructura completa de un nuevo plugin con todos los archivos necesarios |
-| `fs-dev:crear-documentacion` | Crea o completa la estructura de documentación (`Doc/`, `AGENTS.md`, `CLAUDE.md` y `.gitignore`) de un plugin o del core |
+| `fs-dev:crear-documentacion` | Crea o completa la estructura de documentación (`Doc/`, `AGENTS.md`, `CLAUDE.md` y `.gitignore`) de un plugin o del core y, si `Doc/Context` está vacío, lo rellena con `fs-dev:context-writer` |
 | `fs-dev:crear-modelo` | Crea un modelo PHP con su clase y archivo XML de tabla |
 | `fs-dev:crear-controlador` | Crea controladores (ListController, EditController, PanelController) con su vista asociada |
 | `fs-dev:crear-extension` | Crea extensiones para modificar modelos o controladores sin tocar el código fuente |
@@ -65,7 +65,9 @@ Las skills se activan solas cuando la petición encaja con su descripción. Para
 | Skill | Descripción |
 |---|---|
 | `fs-dev:docs-expert` | Responde preguntas de programación consultando la documentación oficial de FacturaScripts |
+| `fs-dev:context-writer` | Rellena `Doc/Context` leyendo el historial git del commit más antiguo al más nuevo y el código, y completa los docblocks que faltan sin cambiar el código |
 | `fs-dev:docs-writer` | Escribe una página de documentación de uso (`Doc/User`) o de programación (`Doc/Dev`) con capturas anotadas y anonimizadas, y la registra en `Doc/forja.json` |
+| `fs-dev:sincronizar-forja` | Sincroniza un plugin con su ficha de autor en facturascripts.com mediante las herramientas `forja_*` del plugin fs-forja: documentación de `Doc/`, traducciones, datos, imágenes, noticias, versiones, errores e issues |
 | `fs-dev:analizar-bug` | Analiza y corrige bugs en plugins: comportamiento incorrecto, errores inesperados, datos incorrectos |
 | `fs-dev:testing-expert` | Tests PHPUnit, PHPStan, CS-Check, depuración y control de calidad |
 | `fs-dev:depurar-y-testear` | Guía para depurar con modo debug (FS_DEBUG), logs con Tools::log() y PHPUnit |
@@ -91,6 +93,7 @@ En Claude Code, estos archivos se cargan como agentes nativos y las skills de pe
 | `fs-dev:api-designer` | Opus | `gpt-6.1-sol` (esfuerzo `high`) | Diseño de endpoints REST y API personalizada |
 | `fs-dev:backend-developer` | Opus | `gpt-6.1-sol` (esfuerzo `high`) | Desarrollo backend: modelos, BD, Workers, Cron |
 | `fs-dev:compatibility-auditor` | Sonnet | `gpt-6.1-sol` | Compatibilidad de un plugin con las versiones del core (`min_version`) y auditoría de seguridad |
+| `fs-dev:context-writer` | Sonnet | `gpt-6.1-sol` | Contexto del código (`Doc/Context`) a partir del historial git y docblocks que faltan, sin cambiar el código |
 | `fs-dev:docs-expert` | Haiku | No aplica: la skill se usa directamente | Documentación oficial y preguntas de programación |
 | `fs-dev:docs-writer` | Sonnet | `gpt-6.1-sol` | Páginas de documentación paso a paso con capturas anotadas y anonimizadas |
 | `fs-dev:document-expert` | Opus | `gpt-6.1-sol` (esfuerzo `high`) | Documentos de compra y venta (presupuestos, facturas, albaranes, pedidos) |
@@ -120,7 +123,7 @@ El contexto incluye también la regla de la documentación propia: el core y cad
 
 En cada mensaje del usuario (`UserPromptSubmit`), el plugin añade al contexto un recordatorio para que el modelo responda siempre en el idioma configurado, incluidos los mensajes de progreso entre herramientas, los resúmenes, las preguntas y las descripciones de comandos. El código, los identificadores, los comandos y los términos técnicos se mantienen en su forma original. Funciona igual en Claude Code y en Codex.
 
-El idioma se elige con `settings.language` en `~/.fs-claude.json`:
+El idioma se elige con `settings.language` en `~/.fs-ai.json`:
 
 | Valor | Resultado |
 |-------|-----------|
@@ -151,6 +154,7 @@ El plugin ejecuta un hook `PostToolUse` secuencial tras cada escritura o edició
 - **Nunca bloquea:** sale siempre con código 0 y deja los errores y avisos en stderr.
 - **Avisa al modelo:** si modifica un archivo, devuelve `hookSpecificOutput.additionalContext` para que el modelo lo relea antes de volver a editarlo. Si no cambia nada, no escribe en stdout.
 - **Respeta el formato:** conserva los finales de línea (LF o CRLF) y el BOM, y no modifica los archivos que no son UTF-8 válido.
+- **Respeta el modo «solo documentación»:** no toca los archivos de un proyecto mientras `scripts/doc-only-guard.py start` esté activo en su repositorio (ver [Protección «solo documentación»](#protección-solo-documentación)).
 
 ### Actualización de copyright
 
@@ -203,7 +207,7 @@ Extrae del plugin las clases (incluidos los `use` agrupados con llaves), llamada
 
 Para no confundir el código del core con el ajeno, descarta los campos que el plugin declara en sus XML de tabla y los métodos de clases nativas de PHP, y atribuye a su origen los símbolos que aportan otros plugins instalados (prefiriendo los de `require`) o las librerías de `vendor/`. Un `pipe('X')` que no existe en el core y que nada del plugin invoca se señala aparte: esa extensión probablemente nunca llega a ejecutarse.
 
-La ruta del core se busca en `--core`, la variable `FS_CORE_PATH`, la clave `settings.corePath` (o su alias `settings.coreRepoPath`) de `~/.fs-claude.json`, la raíz de la instalación cuando el plugin vive en `Plugins/` y, por último, el directorio actual.
+La ruta del core se busca en `--core`, la variable `FS_CORE_PATH`, la clave `settings.corePath` (o su alias `settings.coreRepoPath`) de `~/.fs-ai.json`, la raíz de la instalación cuando el plugin vive en `Plugins/` y, por último, el directorio actual.
 
 ### Auditoría de seguridad
 
@@ -233,6 +237,22 @@ python3 fs-dev/scripts/create-doc-structure.py [<ruta_plugin_o_core>] [--check] 
 
 Crea o completa, sin sobrescribir nada, `Doc/User`, `Doc/Dev`, `Doc/Context/README.md`, `Doc/Assets`, `Doc/forja.json`, `AGENTS.md`, `CLAUDE.md` (solo `@AGENTS.md`) y el `.gitignore`, con un `.gitkeep` en las carpetas vacías. Del `.gitignore` quita solo las reglas que impiden versionar la estructura (`CLAUDE.md`, `AGENTS.md`, `/.claude` entero o `.agents`) y añade las que faltan, incluidas `CLAUDE.local.md` y `AGENTS.override.md`. En `Doc/forja.json` añade las secciones `User` y `Dev` que falten y valida los datos de cada página (archivo, campos admitidos, tipos, longitudes máximas, color y página padre). Avisa como pendiente de lo que no resuelve solo: un `CLAUDE.md` con instrucciones propias, un `AGENTS.md` sin enlace a `Doc/`, un problema en `Doc/forja.json` o una regla que sigue ignorando la documentación según `git check-ignore`. `--check` solo informa. Devuelve `0` si la estructura queda completa, `1` si quedan pendientes (o falta algo con `--check`) y `2` si la ruta no es un plugin ni el core.
 
+Además indica si `Doc/Context` está vacío (sin más archivos que el `README.md` de la plantilla): con una línea final en el texto y con `context_empty` en `--json`. No es un pendiente; la skill `fs-dev:crear-documentacion` lo usa para rellenar el contexto con `fs-dev:context-writer` la primera vez.
+
+### Protección «solo documentación»
+
+`scripts/doc-only-guard.py` no es un hook: lo usa la skill `fs-dev:context-writer` para garantizar que, al documentar, el código no cambia en ningún concepto.
+
+```bash
+python3 fs-dev/scripts/doc-only-guard.py {start,check,stop,status} [<ruta_plugin_o_core>] [--json]
+```
+
+- `start` guarda en la carpeta de git del repositorio (`git rev-parse --git-path fs-ai-doc-only.json`, nunca en el árbol de trabajo) el commit actual y la huella de los archivos que ya tenían cambios. Mientras existe ese marcador, el hook de edición no actualiza el copyright ni ordena las clases de ese proyecto. Caduca a las 12 horas por si se queda olvidado.
+- `check` compara cada PHP con su versión de partida sin comentarios ni espacios (con el tokenizador de PHP si hay `php` en el PATH, o con uno propio aproximado si no) y avisa de los archivos que ya tenían cambios y se han vuelto a tocar y de cualquier otro archivo creado, borrado o modificado fuera de `Doc/`, `AGENTS.md`, `CLAUDE.md` y `.gitignore`. Sin `start` previo compara con `HEAD`.
+- `stop` borra el marcador y `status` dice si está activo.
+
+Devuelve `0` si todo está bien, `1` si `check` encuentra infracciones y `2` si la ruta no es un plugin ni el core dentro de un repositorio git.
+
 ### Capturas de la documentación
 
 `scripts/doc-screenshots.py` no es un hook: lo usa la skill `fs-dev:docs-writer` para hacer las capturas de una página de documentación a partir de un escenario JSON (formato en [`references/documentacion/escenario-de-capturas.md`](references/documentacion/escenario-de-capturas.md)).
@@ -243,12 +263,14 @@ FS_DOC_USER='<usuario>' FS_DOC_PASSWORD='<contraseña>' python3 fs-dev/scripts/d
 
 Abre Google Chrome o Chromium sin interfaz con un perfil temporal (sin dependencias de Python), inicia sesión en la instalación de pruebas con las credenciales de las variables de entorno, ejecuta los pasos de cada pantalla y guarda un PNG por captura. Antes de capturar oculta la barra de depuración, sustituye por valores ficticios los nombres, NIF, emails, teléfonos, direcciones e IBAN (por campo, por columna y por patrón, siempre con el mismo valor ficticio para el mismo valor real), desenfoca los QR, dibuja las marcas (recuadro, número, flecha y nota) y recorta. Si queda algún dato personal visible, no guarda la imagen. Bloquea los clics que pueden cambiar datos salvo que el paso lo permita expresamente. `--scan` lista los controles de cada pantalla con su selector. Devuelve `0` si todo va bien, `1` si falla alguna captura y `2` si el escenario no es válido o Chrome no arranca.
 
-## Configuración personalizada (`~/.fs-claude.json`)
+## Configuración personalizada (`~/.fs-ai.json`)
 
-Puedes desactivar cualquiera de los dos scripts automáticos o cambiar el idioma de las respuestas creando o editando el archivo `~/.fs-claude.json` en tu directorio home. Este archivo es compartido por todos los plugins de fs-claude y se encuentra en:
+Puedes desactivar cualquiera de los dos scripts automáticos o cambiar el idioma de las respuestas creando o editando el archivo `~/.fs-ai.json` en tu directorio home. Este archivo es compartido por todos los plugins de fs-ai y se encuentra en:
 
-- **macOS / Linux**: `/Users/tu-usuario/.fs-claude.json`
-- **Windows**: `C:\Users\tu-usuario\.fs-claude.json`
+- **macOS / Linux**: `/Users/tu-usuario/.fs-ai.json`
+- **Windows**: `C:\Users\tu-usuario\.fs-ai.json`
+
+Si vienes de una versión anterior y solo tienes `~/.fs-claude.json`, se sigue usando ese archivo; puedes renombrarlo a `~/.fs-ai.json` cuando quieras.
 
 ### Opciones disponibles
 

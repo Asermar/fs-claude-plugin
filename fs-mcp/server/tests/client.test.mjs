@@ -15,8 +15,8 @@ const borrar = usarConexiones({
     b: { name: 'B', url: fsB.url, token: 'token-b' },
   },
 });
-const { connectionManager } = await import('../dist/connection-manager.js');
-const { fsClient } = await import('../dist/fs/client.js');
+const { connectionManager } = await import('../build/connection-manager.js');
+const { fsClient } = await import('../build/fs/client.js');
 
 test.after(async () => {
   await fsA.cerrar();
@@ -37,7 +37,7 @@ test('cambiar la conexión por defecto surte efecto sin reiniciar', async () => 
 
 test('cambiar el token de una conexión surte efecto sin reiniciar', async () => {
   await fsClient.get('/clientes', {}, 'b');
-  connectionManager.addConnection('b', { name: 'B', url: fsB.url, token: 'token-b-nuevo' });
+  connectionManager.addConnection('b', { name: 'B', url: fsB.url, token: 'token-b-nuevo' }, true);
   await fsClient.get('/clientes', {}, 'b');
 
   assert.equal(fsB.peticiones.at(-2).headers.token, 'token-b');

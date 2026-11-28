@@ -15,7 +15,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { arrancarFsDePega } from './fake-fs.mjs';
 
-const { validateToolInput } = await import('../dist/utils/validateInput.js');
+const { validateToolInput } = await import('../build/utils/validateInput.js');
 
 const serverDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const api = await arrancarFsDePega((req) => (req.method === 'GET' ? [{ idproducto: 5, referencia: 'R1' }] : { ok: 'hecho' }));
@@ -201,6 +201,31 @@ for (const [setAsDefault, esperado] of [['0', false], [false, false], ['1', true
       // Vuelve a 'pega' en el archivo y en el servidor, que la guarda en memoria
       await llamar('set_default_connection', { key: 'pega' });
     }
+  });
+}
+
+for (const [overwrite, esperado] of [['0', false], [false, false], ['1', true], [true, true]]) {
+  test(`add_connection con overwrite ${JSON.stringify(overwrite)} ${esperado ? 'sustituye' : 'no sustituye'} una conexión existente`, async () => {
+    const key = `repetida-${String(overwrite)}`;
+    const archivo = path.join(home, 'connections.json');
+    await llamar('add_connection', { key, name: 'Original', url: 'http://127.0.0.1:9', token: 'original' });
+    const { result } = await llamar('add_connection', { key, name: 'Nueva', url: 'http://127.0.0.1:9', token: 'nuevo', overwrite });
+    const guardado = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+    assert.equal(result.isError === true, !esperado);
+    assert.equal(guardado.connections[key].token, esperado ? 'nuevo' : 'original');
+    if (esperado) {
+      assert.match(result.content[0].text, / saved successfully/);
+    }
+  });
+}
+
+for (const [rejectUnauthorized, esperado] of [['0', false], [false, false], ['1', true], [true, true]]) {
+  test(`add_connection guarda rejectUnauthorized ${JSON.stringify(rejectUnauthorized)} como ${esperado}`, async () => {
+    const key = `tls-${String(rejectUnauthorized)}`;
+    const { result } = await llamar('add_connection', { key, name: 'TLS', url: 'http://127.0.0.1:9', token: 't', rejectUnauthorized });
+    assert.notEqual(result.isError, true);
+    const guardado = JSON.parse(fs.readFileSync(path.join(home, 'connections.json'), 'utf8'));
+    assert.equal(guardado.connections[key].rejectUnauthorized, esperado);
   });
 }
 

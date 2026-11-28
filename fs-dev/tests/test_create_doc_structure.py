@@ -73,6 +73,30 @@ class CreateDocStructureTest(unittest.TestCase):
         gitignore = (self.root / '.gitignore').read_text(encoding='utf-8')
         self.assertEqual(gitignore, DOCS.GITIGNORE_TEMPLATE)
 
+    def test_indica_si_el_contexto_esta_vacio(self) -> None:
+        """Doc/Context con solo el README de la plantilla cuenta como vacío; con un tema, no."""
+        code, output = run_main(str(self.root), '--check', '--json')
+        self.assertEqual(code, 1)
+        self.assertTrue(json.loads(output)['context_empty'])
+
+        _, output = run_main(str(self.root))
+        self.assertIn('Doc/Context está vacío', output)
+        _, output = run_main(str(self.root), '--json')
+        self.assertTrue(json.loads(output)['context_empty'])
+
+        (self.root / 'Doc/Context/01-arquitectura.md').write_text('# Arquitectura\n', encoding='utf-8')
+        code, output = run_main(str(self.root), '--json')
+        self.assertEqual(code, 0)
+        self.assertFalse(json.loads(output)['context_empty'])
+
+    def test_un_indice_de_contexto_editado_no_esta_vacio(self) -> None:
+        """Si el README de Doc/Context ya no es el de la plantilla, el contexto tiene contenido."""
+        run_main(str(self.root))
+        readme = self.root / 'Doc/Context/README.md'
+        readme.write_text(readme.read_text(encoding='utf-8') + '\nNotas del equipo.\n', encoding='utf-8')
+        _, output = run_main(str(self.root), '--json')
+        self.assertFalse(json.loads(output)['context_empty'])
+
     def test_es_idempotente(self) -> None:
         run_main(str(self.root))
         code, output = run_main(str(self.root))
@@ -125,6 +149,8 @@ class CreateDocStructureTest(unittest.TestCase):
                     'youtubeid': 'abc',
                     'imageurl': 'Doc/Assets/inicio.png', 'icon': 'fa-solid fa-book', 'color': 'info',
                     'keywords': 'inicio,ventas', 'controllers': 'ListFacturaCliente', 'visibility': True,
+                    'idpublication': 12,
+                    'assets': {'Assets/inicio.png': {'url': 'https://facturascripts.com/MyFiles/x.png', 'sha256': 'ab'}},
                 },
                 'ventas.md': {'parent': 'inicio.md'},
             },
@@ -139,7 +165,8 @@ class CreateDocStructureTest(unittest.TestCase):
         forja['User']['ventas.md'] = {'parent': 'nada.md', 'ordernum': '1', 'visibility': 'si', 'color': 'light',
                                       'autor': 'yo', 'permalink': 'p' * 201, 'keywords': 'k' * 301}
         forja['User']['inicio.md']['controllers'] = 'c' * 300
-        forja['User']['falta.md'] = {}
+        forja['User']['falta.md'] = {'parent': 'inicio', 'visibility': 1, 'controllers': 'ListA, EditA',
+                                     'idpublication': 0, 'assets': {'Assets/x.png': 'https://x'}, 'title': 't' * 201}
         forja['Otra'] = {}
         (self.root / 'Doc/forja.json').write_text(json.dumps(forja), encoding='utf-8')
 
@@ -147,10 +174,17 @@ class CreateDocStructureTest(unittest.TestCase):
 
         self.assertEqual(code, 1)
         for text in ('la página padre «nada.md» no existe', '«ordernum» debe ser número entero',
-                     '«visibility» debe ser true o false', 'color «light» no admitido', 'campo desconocido «autor»',
+                     '«visibility» debe ser true o false, sin comillas, no el texto «si»',
+                     'falta.md: «visibility» debe ser true o false',
+                     '«parent» es el nombre de archivo de la página padre con «.md» («inicio.md»)',
+                     '«controllers» va separado solo por comas, sin espacios',
+                     'color «light» no admitido', 'campo desconocido «autor»',
                      'User › falta.md no existe', 'sección desconocida «Otra»',
                      '«permalink» tiene 201 caracteres y el máximo es 200',
-                     '«keywords» tiene 301 caracteres y el máximo es 300'):
+                     '«keywords» tiene 301 caracteres y el máximo es 300',
+                     '«title» tiene 201 caracteres y el máximo es 200',
+                     '«idpublication» es el id de la publicación en la forja',
+                     '«assets» guarda cada imagen subida'):
             self.assertIn(text, output)
         self.assertNotIn('«controllers» tiene', output)
 

@@ -12,8 +12,9 @@ Ticketbai y Verifactu):
 - ``Doc/Assets/``: imágenes, vídeos y otros archivos enlazados desde la
   documentación.
 - ``Doc/forja.json``: datos de cada página de ``User`` y ``Dev`` (título, página
-  padre, orden, icono, controladores donde se muestra, visibilidad...) para
-  publicarlas en la forja de facturascripts.com.
+  padre, orden, icono, controladores donde se muestra...) para publicarlas en la
+  forja de facturascripts.com con ``forja_publish_doc_page`` de fs-forja, que
+  guarda en ella el id de cada publicación y sus imágenes subidas.
 - ``AGENTS.md``: descripción breve y enlace a ``Doc/``; ``CLAUDE.md`` solo lo
   importa con ``@AGENTS.md``.
 - ``.gitignore``: lo que ignoran los plugins fiscales, incluidos lo local de
@@ -21,6 +22,11 @@ Ticketbai y Verifactu):
   ``AGENTS.override.md``.
 
 Las carpetas vacías reciben un ``.gitkeep`` para que git las suba.
+
+El informe indica además si ``Doc/Context/`` está vacío (sin más archivos que el
+``README.md`` de la plantilla): es la señal para rellenarlo con la skill
+``fs-dev:context-writer`` a partir del historial git y del código. No es un
+pendiente y no cambia el código de salida.
 
 El script es idempotente: nunca sobrescribe un archivo que ya existe. Del
 ``.gitignore`` solo quita las reglas que impedirían versionar la estructura
@@ -114,10 +120,15 @@ FORJA_FIELDS: dict[str, type] = {
     'keywords': str,
     'controllers': str,
     'visibility': bool,
+    'idpublication': int,
+    'assets': dict,
 }
 
 # Longitud máxima, en caracteres, de los campos de texto que la forja limita.
 FORJA_MAX_LENGTH = {
+    'title': 200,
+    'title_short': 100,
+    'icon': 50,
     'permalink': 200,
     'keywords': 300,
     'controllers': 300,
@@ -166,14 +177,16 @@ decisiones) y dice qué archivo abrir para cada tema; no hace falta leerlo todo.
 | [`Doc/Dev/`](Doc/Dev/) | Quien programa | Páginas `.md` que explican cómo personalizarlo desde otro plugin |
 | [`Doc/Context/`](Doc/Context/) | El equipo y los agentes | Por qué el código es como es: las decisiones tomadas, con su índice en `README.md` |
 | [`Doc/Assets/`](Doc/Assets/) | Toda la documentación | Imágenes, vídeos y otros archivos enlazados desde las páginas |
-| [`Doc/forja.json`](Doc/forja.json) | La forja de facturascripts.com | Datos de cada página de `User` y `Dev` para publicarlas |
+| [`Doc/forja.json`](Doc/forja.json) | La forja de facturascripts.com | Datos de cada página de `User` y `Dev` para publicarlas, y el id de su publicación |
 
 - La documentación se actualiza en el mismo trabajo que cambia el código; una decisión nueva se anota en
   `Doc/Context/` y en su índice.
 - `Doc/forja.json` agrupa en `User` y `Dev` las páginas de esas carpetas por su nombre de archivo, con campos
   opcionales: `title`, `title_short`, `permalink` (enlace en la web, máx. 200 caracteres; no se puede cambiar una vez
-  publicada la página), `parent`, `ordernum`, `youtubeid`, `imageurl`, `icon`, `color`, `keywords` y `controllers`
-  (máx. 300 caracteres cada uno) y `visibility`.
+  publicada la página), `parent` (nombre de archivo de la página padre, con `.md`), `ordernum`, `youtubeid`,
+  `imageurl`, `icon`, `color`, `keywords` y `controllers` (máx. 300 caracteres cada uno; `controllers`, separados por
+  comas sin espacios) y `visibility` (`true` o `false`, sin comillas). Al publicar una página, `forja_publish_doc_page`
+  de fs-forja añade `idpublication` y `assets` (las imágenes ya subidas): se versionan con la página.
 - `CLAUDE.md` solo importa este archivo (`@AGENTS.md`). Las instrucciones locales que no se versionan van en
   `CLAUDE.local.md` (Claude Code) o `AGENTS.override.md` (Codex).
 """
@@ -216,6 +229,7 @@ class Report:
         gitignore_added: reglas añadidas al ``.gitignore``.
         gitignore_removed: reglas quitadas del ``.gitignore`` por impedir versionar la estructura.
         pending: tareas que el script no resuelve solo y debe revisar una persona o el agente.
+        context_empty: ``Doc/Context/`` no tiene más contenido que el índice de la plantilla.
     """
 
     created: list[str] = field(default_factory=list)
@@ -223,6 +237,7 @@ class Report:
     gitignore_added: list[str] = field(default_factory=list)
     gitignore_removed: list[str] = field(default_factory=list)
     pending: list[str] = field(default_factory=list)
+    context_empty: bool = False
 
     def changes(self) -> bool:
         """Indica si hay algo creado o modificado (o por crear o modificar con ``--check``)."""
@@ -362,16 +377,31 @@ def check_forja_page(section: str, page: str, fields: object, pages: dict, folde
         expected = FORJA_FIELDS.get(name)
         if expected is None:
             problems.append(f'{where}: campo desconocido «{name}» (admitidos: {", ".join(FORJA_FIELDS)})')
+        elif name == 'visibility' and isinstance(value, str):
+            problems.append(f'{where}: «visibility» debe ser true o false, sin comillas, no el texto «{value}»')
         elif not isinstance(value, expected) or (expected is int and isinstance(value, bool)):
-            tipo = {str: 'texto', int: 'número entero', bool: 'true o false'}[expected]
+            tipo = {str: 'texto', int: 'número entero', bool: 'true o false', dict: 'un objeto'}[expected]
             problems.append(f'{where}: «{name}» debe ser {tipo}')
         elif name in FORJA_MAX_LENGTH and len(value) > FORJA_MAX_LENGTH[name]:
             problems.append(f'{where}: «{name}» tiene {len(value)} caracteres y el máximo es '
                             f'{FORJA_MAX_LENGTH[name]}')
         elif name == 'color' and value not in FORJA_COLORS:
             problems.append(f'{where}: color «{value}» no admitido ({", ".join(FORJA_COLORS)})')
+        elif name == 'parent' and not value.endswith('.md'):
+            problems.append(f'{where}: «parent» es el nombre de archivo de la página padre con «.md» '
+                            f'(«{value}.md»), no su permalink')
         elif name == 'parent' and value not in pages and not (folder / value).is_file():
             problems.append(f'{where}: la página padre «{value}» no existe en Doc/{section}/')
+        elif name == 'controllers' and any(char.isspace() for char in value):
+            problems.append(f'{where}: «controllers» va separado solo por comas, sin espacios')
+        elif name == 'idpublication' and value <= 0:
+            problems.append(f'{where}: «idpublication» es el id de la publicación en la forja, un entero positivo')
+        elif name == 'assets' and not all(
+            isinstance(asset, dict) and isinstance(asset.get('url'), str) and isinstance(asset.get('sha256'), str)
+            for asset in value.values()
+        ):
+            problems.append(f'{where}: «assets» guarda cada imagen subida como {{"url": ..., "sha256": ...}}; '
+                            'lo escribe forja_publish_doc_page')
     return problems
 
 
@@ -433,6 +463,21 @@ def check_agent_files(project: Project, report: Report) -> None:
                               'la tabla de Doc/')
 
 
+def is_context_empty(project: Project) -> bool:
+    """Indica si Doc/Context/ no tiene más contenido que el README.md de la plantilla (o aún no existe)."""
+    folder = project.root / 'Doc/Context'
+    if not folder.is_dir():
+        return True
+    files = [path for path in folder.rglob('*')
+             if path.is_file() and path.name not in IGNORED_FILES and path.name != '.gitkeep']
+    if any(path != folder / 'README.md' for path in files):
+        return False
+    if not files:
+        return True
+    content = (folder / 'README.md').read_text(encoding='utf-8', errors='replace')
+    return content.strip() == CONTEXT_README_TEMPLATE.format(name=project.name).strip()
+
+
 def check_ignored_paths(project: Project, report: Report) -> None:
     """Avisa de las rutas de la estructura que el .gitignore sigue ignorando.
 
@@ -473,6 +518,7 @@ def check_ignored_paths(project: Project, report: Report) -> None:
 def build_structure(project: Project, check: bool = False) -> Report:
     """Crea o comprueba la estructura completa de documentación del proyecto."""
     report = Report()
+    report.context_empty = is_context_empty(project)
     ensure_folders(project, report, check)
     write_file(project, 'Doc/Context/README.md', CONTEXT_README_TEMPLATE.format(name=project.name), report, check)
     ensure_forja(project, report, check)
@@ -499,6 +545,8 @@ def print_report(project: Project, report: Report, check: bool) -> None:
         print('  La estructura ya estaba completa.')
     for item in report.pending:
         print(f'  ! Pendiente: {item}')
+    if report.context_empty:
+        print('  · Doc/Context está vacío: rellénalo con la skill fs-dev:context-writer (historial git y código).')
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -521,7 +569,7 @@ def main(argv: list[str] | None = None) -> int:
             'root': str(project.root), 'kind': project.kind, 'name': project.name, 'check': args.check,
             'created': report.created, 'existing': report.existing,
             'gitignore_added': report.gitignore_added, 'gitignore_removed': report.gitignore_removed,
-            'pending': report.pending,
+            'pending': report.pending, 'context_empty': report.context_empty,
         }, ensure_ascii=False, indent=2))
     else:
         print_report(project, report, args.check)
