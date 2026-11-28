@@ -250,6 +250,37 @@ class ProcessFileTest(unittest.TestCase):
         self.assertEqual(0, result)
         self.assertEqual(original, content)
 
+    def test_doc_only_mode_skips_both_transformations(self) -> None:
+        """Con el marcador de doc-only-guard.py en el repositorio, el archivo no cambia."""
+        with tempfile.TemporaryDirectory() as directory:
+            plugin = make_plugin(Path(directory))
+            subprocess.run(['git', '-C', str(plugin), 'init', '-q'], check=True)
+            file_path = plugin / 'Model' / 'Example.php'
+            file_path.write_text(PLUGIN_CLASS, encoding='utf-8')
+            marker = plugin / '.git' / POST_EDIT.DOC_ONLY_MARKER
+            marker.write_text(json.dumps({'root': str(plugin.resolve()),
+                                          'started': POST_EDIT.datetime.now().timestamp()}), encoding='utf-8')
+
+            POST_EDIT.process_file(POST_EDIT.ModifiedFile(file_path), SCRIPT_PATH.parent)
+            self.assertEqual(PLUGIN_CLASS, file_path.read_text(encoding='utf-8'))
+
+            # Un marcador caducado ya no tiene efecto.
+            marker.write_text(json.dumps({'root': str(plugin.resolve()), 'started': 0}), encoding='utf-8')
+            POST_EDIT.process_file(POST_EDIT.ModifiedFile(file_path), SCRIPT_PATH.parent)
+            self.assertNotEqual(PLUGIN_CLASS, file_path.read_text(encoding='utf-8'))
+
+    def test_doc_only_mode_of_other_project_does_not_apply(self) -> None:
+        """Un marcador cuya raíz es otra carpeta del repositorio no afecta al archivo."""
+        with tempfile.TemporaryDirectory() as directory:
+            plugin = make_plugin(Path(directory))
+            subprocess.run(['git', '-C', str(directory), 'init', '-q'], check=True)
+            other = Path(directory) / 'Otro'
+            other.mkdir()
+            (Path(directory) / '.git' / POST_EDIT.DOC_ONLY_MARKER).write_text(
+                json.dumps({'root': str(other.resolve()), 'started': POST_EDIT.datetime.now().timestamp()}),
+                encoding='utf-8')
+            self.assertFalse(POST_EDIT.doc_only_active((plugin / 'Model' / 'Example.php').resolve()))
+
     def test_settings_can_disable_both_transformations(self) -> None:
         """Con ambas opciones desactivadas en ~/.fs-ai.json el archivo no cambia."""
         with tempfile.TemporaryDirectory() as directory:
@@ -367,3 +398,98 @@ class MainTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TranslationKeysTest(unittest.TestCase):
+    """Comprueba el aviso de claves de traducción con mayúsculas."""
+
+    def _write_translation(self, root: Path, data: object, name: str = 'es_ES.json') -> Path:
+        """Crea un archivo de traducciones dentro de ``Translation``.
+
+        Args:
+            root: Carpeta del plugin.
+            data: Contenido que se serializa a JSON, o texto que se escribe tal cual.
+            name: Nombre del archivo.
+
+        Returns:
+            La ruta del archivo creado.
+        """
+        folder = root / 'Translation'
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / name
+        text = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
+        path.write_text(text, encoding='utf-8')
+        return path
+
+    def test_detects_only_keys_with_uppercase(self) -> None:
+        """Solo se informa de las claves con mayúsculas, no de los valores."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_translation(Path(directory), {
+                'my-model': 'Mi Modelo', 'My-Model': 'Mi modelo', 'vatRate': 'IVA', 'ÁREA': 'Área',
+            })
+            keys = POST_EDIT.uppercase_translation_keys(path)
+
+        self.assertEqual(['My-Model', 'vatRate', 'ÁREA'], keys)
+
+    def test_ignores_other_files_and_invalid_json(self) -> None:
+        """Un JSON fuera de Translation, un JSON inválido o no objeto no generan aviso."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            other = root / 'composer.json'
+            other.write_text('{"Name": "x"}', encoding='utf-8')
+            invalid = self._write_translation(root, '{"Clave": ', 'en_EN.json')
+            listed = self._write_translation(root, '["Clave"]', 'ca_ES.json')
+
+            for path in (other, invalid, listed, root / 'Translation' / 'missing.json'):
+                self.assertEqual([], POST_EDIT.uppercase_translation_keys(path))
+
+    def test_hook_warns_and_does_not_modify_file(self) -> None:
+        """El hook avisa por stdout de las claves con mayúsculas sin tocar el archivo."""
+        with tempfile.TemporaryDirectory() as directory:
+            plugin = make_plugin(Path(directory))
+            path = self._write_translation(plugin, {'ok-key': 'Bien', 'Bad-Key': 'Mal'})
+            before = path.read_text(encoding='utf-8')
+
+            result = run_hook({'cwd': directory, 'tool_name': 'Edit', 'tool_input': {'file_path': str(path)}})
+            after = path.read_text(encoding='utf-8')
+
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(before, after)
+        context = json.loads(result.stdout)['hookSpecificOutput']['additionalContext']
+        self.assertIn('Mi Plugin/Translation/es_ES.json', context)
+        self.assertIn('"Bad-Key"', context)
+        self.assertNotIn('"ok-key"', context)
+        self.assertNotIn('Relee el archivo', context)
+
+    def test_codex_patch_reports_translation_keys(self) -> None:
+        """Un apply_patch de Codex sobre las traducciones también avisa."""
+        with tempfile.TemporaryDirectory() as directory:
+            plugin = make_plugin(Path(directory))
+            self._write_translation(plugin, {'Clave': 'Valor'})
+            patch = '*** Begin Patch\n*** Update File: Mi Plugin/Translation/es_ES.json\n@@\n-a\n+b\n*** End Patch\n'
+
+            result = run_hook({'cwd': directory, 'tool_name': 'apply_patch', 'tool_input': {'command': patch}})
+
+        self.assertIn('"Clave"', json.loads(result.stdout)['hookSpecificOutput']['additionalContext'])
+
+    def test_lowercase_keys_produce_no_output(self) -> None:
+        """Si todas las claves están en minúsculas, stdout queda vacío."""
+        with tempfile.TemporaryDirectory() as directory:
+            plugin = make_plugin(Path(directory))
+            path = self._write_translation(plugin, {'my-model': 'Mi Modelo'})
+
+            result = run_hook({'cwd': directory, 'tool_name': 'Write', 'tool_input': {'file_path': str(path)}})
+
+        self.assertEqual(0, result.returncode)
+        self.assertEqual('', result.stdout)
+
+    def test_long_lists_are_truncated(self) -> None:
+        """El aviso cita como máximo MAX_LISTED_KEYS claves e indica cuántas faltan."""
+        keys = [f'Key-{index}' for index in range(POST_EDIT.MAX_LISTED_KEYS + 3)]
+        path = Path('/tmp/Plugin/Translation/es_ES.json')
+        output = POST_EDIT.build_output([], Path('/tmp'), {path: keys})
+        context = output['hookSpecificOutput']['additionalContext']
+
+        self.assertIn(f'"Key-{POST_EDIT.MAX_LISTED_KEYS - 1}"', context)
+        self.assertNotIn(f'"Key-{POST_EDIT.MAX_LISTED_KEYS}"', context)
+        self.assertIn('y 3 más', context)

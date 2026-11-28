@@ -1,6 +1,6 @@
 {
   "name": "fs-forja",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Servidor MCP de la forja de facturascripts.com para Claude Code y Codex: gestiona tus plugins publicados con la API de autor.",
   "author": {
     "name": "Daniel Fernández Giménez",
